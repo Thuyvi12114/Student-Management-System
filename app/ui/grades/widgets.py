@@ -140,6 +140,18 @@ def status_label(status: str | None) -> str:
     return _STATUS_LABELS.get(status.upper(), status)
 
 
+def status_chip_label(status: str | None) -> str:
+    """Nhãn trạng thái dùng cho cột bảng điểm sinh viên."""
+    if not status:
+        return "Chưa có điểm"
+    mapping = {
+        "PASSED": "Đã có điểm",
+        "FAILED": "Không đạt",
+        "PENDING": "Chưa có điểm",
+    }
+    return mapping.get(status.upper(), status)
+
+
 def row_tag(status: str | None) -> tuple[str, ...]:
     if not status:
         return ("pending",)

@@ -20,6 +20,7 @@ from app.ui.theme import (
     BACKGROUND,
     BORDER,
     MUTED,
+    PRIMARY,
     PRIMARY_DARK,
     PRIMARY_SOFT,
     SURFACE,
@@ -29,6 +30,26 @@ from app.ui.theme import (
     secondary_button,
     subtle_button,
 )
+
+# Sidebar nav icon map
+_NAV_ICONS: dict[AppModule, str] = {
+    AppModule.DASHBOARD: "⊞",
+    AppModule.ACCOUNT_MANAGEMENT: "🔒",
+    AppModule.STUDENT_MANAGEMENT: "🎓",
+    AppModule.LECTURER_MANAGEMENT: "👨‍🏫",
+    AppModule.COURSE_MANAGEMENT: "📚",
+    AppModule.ADMIN_GRADE_LOOKUP: "📊",
+    AppModule.GRADE_MANAGEMENT: "✏️",
+    AppModule.LECTURER_COURSE_GRADES: "📋",
+    AppModule.MY_GRADES: "📈",
+    AppModule.PROFILE: "👤",
+}
+
+_ROLE_SECTION: dict = {
+    "ADMIN": "QUẢN TRỊ HỆ THỐNG",
+    "LECTURER": "KHÔNG GIAN GIẢNG VIÊN",
+    "STUDENT": "KHÔNG GIAN SINH VIÊN",
+}
 
 
 class MainView(tk.Tk):
@@ -48,8 +69,8 @@ class MainView(tk.Tk):
         self._modules = RbacPolicy.navigation_for(session.role)
         self._nav_buttons: dict[AppModule, tk.Button] = {}
 
-        self.title(f"Hệ thống quản lý sinh viên • {session.role.label}")
-        self.geometry("1180x720")
+        self.title(f"UniCore  •  Hệ thống quản lý sinh viên")
+        self.geometry("1200x740")
         self.minsize(1024, 640)
         self.configure(bg=BACKGROUND)
         self.protocol("WM_DELETE_WINDOW", self._confirm_exit)
@@ -58,138 +79,208 @@ class MainView(tk.Tk):
         if self._modules:
             self._select_module(self._modules[0])
 
-    def _build(self) -> None:
-        self._build_header()
-        self._build_status_bar()
+    # ------------------------------------------------------------------ layout
 
+    def _build(self) -> None:
         body = tk.Frame(self, bg=BACKGROUND)
         body.pack(fill="both", expand=True)
 
         self._build_sidebar(body)
-        tk.Frame(body, bg=BORDER, width=1).pack(side="left", fill="y")
 
-        self.content = tk.Frame(body, bg=BACKGROUND)
-        self.content.pack(side="left", fill="both", expand=True)
+        right = tk.Frame(body, bg=BACKGROUND)
+        right.pack(side="left", fill="both", expand=True)
 
-    def _build_header(self) -> None:
-        header = tk.Frame(self, bg=SURFACE, height=78)
-        header.pack(fill="x", side="top")
-        header.pack_propagate(False)
+        self._build_topbar(right)
+        tk.Frame(right, bg=BORDER, height=1).pack(fill="x")
 
-        brand = tk.Frame(header, bg=SURFACE)
-        brand.pack(side="left", padx=24, pady=14)
+        self.content = tk.Frame(right, bg=BACKGROUND)
+        self.content.pack(fill="both", expand=True)
 
+        self._build_footer(right)
+
+    # ── Sidebar ───────────────────────────────────────────────────────────────
+
+    def _build_sidebar(self, parent: tk.Frame) -> None:
+        sidebar = tk.Frame(parent, bg=PRIMARY_DARK, width=200)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+
+        # Logo
+        logo_frame = tk.Frame(sidebar, bg=PRIMARY_DARK)
+        logo_frame.pack(fill="x", padx=20, pady=(22, 20))
+        logo_icon = tk.Label(logo_frame, text="🎓", bg=PRIMARY_DARK, font=font(14), fg="white")
+        logo_icon.pack(side="left")
         tk.Label(
-            brand,
-            text="SMS • Hệ thống quản lý sinh viên",
-            bg=SURFACE,
-            fg=PRIMARY_DARK,
-            font=font(13, "bold"),
+            logo_frame,
+            text="UniCore",
+            bg=PRIMARY_DARK,
+            fg="white",
+            font=font(14, "bold"),
+        ).pack(side="left", padx=(6, 0))
+
+        tk.Frame(sidebar, bg="#2D4F9E", height=1).pack(fill="x", padx=16, pady=(0, 12))
+
+        # Section label
+        section_text = _ROLE_SECTION.get(self.session.role.value, "KHÔNG GIAN HỌC VỤ")
+        tk.Label(
+            sidebar,
+            text=section_text,
+            bg=PRIMARY_DARK,
+            fg="#93C5FD",
+            font=font(7, "bold"),
             anchor="w",
-        ).pack(anchor="w")
+        ).pack(fill="x", padx=20, pady=(0, 8))
+
+        # Nav buttons
+        for module in self._modules:
+            icon = _NAV_ICONS.get(module, "•")
+            btn = tk.Button(
+                sidebar,
+                text=f"  {icon}  {module.label}",
+                anchor="w",
+                bg=PRIMARY_DARK,
+                fg="#CBD5E1",
+                activebackground="#2563EB",
+                activeforeground="white",
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                padx=10,
+                pady=9,
+                font=font(9),
+                cursor="hand2",
+                command=lambda m=module: self._select_module(m),
+            )
+            btn.pack(fill="x", padx=10, pady=1)
+            self._nav_buttons[module] = btn
+
+        # User info at bottom
+        bottom = tk.Frame(sidebar, bg=PRIMARY_DARK)
+        bottom.pack(side="bottom", fill="x", padx=16, pady=18)
+        tk.Frame(bottom, bg="#2D4F9E", height=1).pack(fill="x", pady=(0, 12))
+
+        user_row = tk.Frame(bottom, bg=PRIMARY_DARK)
+        user_row.pack(fill="x")
+
+        # Avatar circle (canvas)
+        avatar = tk.Canvas(user_row, width=34, height=34, bg=PRIMARY_DARK,
+                           highlightthickness=0)
+        avatar.pack(side="left")
+        avatar.create_oval(2, 2, 32, 32, fill="#2563EB", outline="")
+        initials = "".join(w[0].upper() for w in self.session.full_name.split()[:2])
+        avatar.create_text(17, 17, text=initials, fill="white", font=font(9, "bold"))
+
+        name_frame = tk.Frame(user_row, bg=PRIMARY_DARK)
+        name_frame.pack(side="left", padx=(10, 0), fill="x", expand=True)
         tk.Label(
-            brand,
-            text="Kiến trúc 3 lớp • Python • Phân quyền theo vai trò",
-            bg=SURFACE,
-            fg=MUTED,
-            font=font(8),
-            anchor="w",
-        ).pack(anchor="w")
-
-        actions = tk.Frame(header, bg=SURFACE)
-        actions.pack(side="right", padx=24, pady=12)
-
-        subtle_button(actions, "Đăng xuất", self._logout).pack(side="right", padx=(10, 0))
-        secondary_button(actions, "Đổi mật khẩu", self._open_change_password).pack(
-            side="right", padx=(10, 0)
-        )
-
-        identity = tk.Frame(actions, bg=SURFACE)
-        identity.pack(side="right", padx=(0, 6))
-        tk.Label(
-            identity,
+            name_frame,
             text=self.session.full_name,
-            bg=SURFACE,
-            fg=TEXT,
+            bg=PRIMARY_DARK,
+            fg="white",
             font=font(9, "bold"),
-            anchor="e",
-        ).pack(anchor="e")
-        role_chip(identity, self.session.role).pack(anchor="e", pady=(3, 0))
+            anchor="w",
+        ).pack(fill="x")
+        tk.Label(
+            name_frame,
+            text=self.session.username,
+            bg=PRIMARY_DARK,
+            fg="#93C5FD",
+            font=font(7),
+            anchor="w",
+        ).pack(fill="x")
 
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+        # Action links
+        action_frame = tk.Frame(bottom, bg=PRIMARY_DARK)
+        action_frame.pack(fill="x", pady=(10, 0))
 
-    def _build_status_bar(self) -> None:
-        border = tk.Frame(self, bg=BORDER, height=1)
-        border.pack(fill="x", side="bottom")
+        def _sidebar_link(text: str, icon: str, cmd) -> tk.Button:
+            return tk.Button(
+                action_frame,
+                text=f"  {icon}  {text}",
+                anchor="w",
+                bg=PRIMARY_DARK,
+                fg="#CBD5E1",
+                activebackground="#1E3A8A",
+                activeforeground="white",
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                padx=4,
+                pady=5,
+                font=font(8),
+                cursor="hand2",
+                command=cmd,
+            )
 
-        bar = tk.Frame(self, bg=SURFACE, height=36)
-        bar.pack(fill="x", side="bottom")
+        _sidebar_link("Bảo mật tài khoản", "🔑", self._open_change_password).pack(fill="x")
+        _sidebar_link("Đăng xuất", "→", self._logout).pack(fill="x")
+
+        # Info note for admin
+        if self.session.role.value == "ADMIN":
+            note_frame = tk.Frame(sidebar, bg="#1E3A8A")
+            note_frame.pack(fill="x", padx=16, pady=(0, 12))
+            tk.Label(
+                note_frame,
+                text="Dữ liệu học vụ tập trung. Quản\nlý nhất quán, tra cứu rõ ràng.",
+                bg="#1E3A8A",
+                fg="#93C5FD",
+                font=font(7),
+                justify="left",
+                wraplength=160,
+                anchor="w",
+            ).pack(padx=4, pady=8, anchor="w")
+    # ── Top bar ───────────────────────────────────────────────────────────────
+
+    def _build_topbar(self, parent: tk.Frame) -> None:
+        bar = tk.Frame(parent, bg=SURFACE, height=52)
+        bar.pack(fill="x")
         bar.pack_propagate(False)
 
-        self.status_var = tk.StringVar(value="Sẵn sàng")
         tk.Label(
             bar,
-            textvariable=self.status_var,
+            text="Hệ thống quản lý sinh viên",
+            bg=SURFACE,
+            fg=MUTED,
+            font=font(9),
+        ).pack(side="left", padx=28)
+
+        right = tk.Frame(bar, bg=SURFACE)
+        right.pack(side="right", padx=28)
+
+        role_chip(right, self.session.role).pack(side="left")
+        tk.Label(
+            right,
+            text="  Năm học 2024-2025",
+            bg=SURFACE,
+            fg=MUTED,
+            font=font(9),
+        ).pack(side="left", padx=(10, 0))
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+
+    def _build_footer(self, parent: tk.Frame) -> None:
+        tk.Frame(parent, bg=BORDER, height=1).pack(fill="x")
+        bar = tk.Frame(parent, bg=SURFACE, height=36)
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
+        tk.Label(
+            bar,
+            text="UniCore  •  Hệ thống quản lý sinh viên",
             bg=SURFACE,
             fg=MUTED,
             font=font(8),
         ).pack(side="left", padx=24)
         tk.Label(
             bar,
-            text=f"Phiên 8 giờ • Mã tài khoản #{self.session.account_id}",
+            text="Không gian quản trị  •  Dữ liệu minh hoạ",
             bg=SURFACE,
             fg=MUTED,
             font=font(8),
         ).pack(side="right", padx=24)
 
-    def _build_sidebar(self, parent: tk.Frame) -> None:
-        sidebar = tk.Frame(parent, bg=SURFACE, width=280)
-        sidebar.pack(side="left", fill="y")
-        sidebar.pack_propagate(False)
-
-        tk.Label(
-            sidebar,
-            text="CHỨC NĂNG THEO VAI TRÒ",
-            bg=SURFACE,
-            fg=MUTED,
-            font=font(7, "bold"),
-            anchor="w",
-        ).pack(fill="x", padx=22, pady=(20, 8))
-
-        for module in self._modules:
-            button = tk.Button(
-                sidebar,
-                text=module.label,
-                anchor="w",
-                bg=SURFACE,
-                fg=TEXT,
-                activebackground=PRIMARY_SOFT,
-                activeforeground=PRIMARY_DARK,
-                relief="flat",
-                bd=0,
-                highlightthickness=0,
-                padx=22,
-                pady=10,
-                font=font(9),
-                cursor="hand2",
-                command=lambda selected=module: self._select_module(selected),
-            )
-            button.pack(fill="x", padx=10, pady=1)
-            self._nav_buttons[module] = button
-
-        footer = tk.Frame(sidebar, bg=SURFACE)
-        footer.pack(side="bottom", fill="x", padx=22, pady=16)
-        tk.Label(
-            footer,
-            text=f"Tài khoản: {self.session.username}",
-            bg=SURFACE,
-            fg=MUTED,
-            font=font(8),
-            anchor="w",
-        ).pack(fill="x")
+    # ------------------------------------------------------------------ routing
 
     def _select_module(self, module: AppModule) -> None:
-        """Chốt chặn RBAC ở tầng giao diện trước khi hiển thị module."""
         if not RbacPolicy.can_access(self.session.role, module):
             messagebox.showwarning(
                 "Không có quyền truy cập",
@@ -199,11 +290,11 @@ class MainView(tk.Tk):
             )
             return
 
-        for item, button in self._nav_buttons.items():
+        for item, btn in self._nav_buttons.items():
             if item is module:
-                button.configure(bg=PRIMARY_SOFT, fg=PRIMARY_DARK, font=font(9, "bold"))
+                btn.configure(bg="#1D4ED8", fg="white", font=font(9, "bold"))
             else:
-                button.configure(bg=SURFACE, fg=TEXT, font=font(9))
+                btn.configure(bg=PRIMARY_DARK, fg="#CBD5E1", font=font(9))
 
         for child in self.content.winfo_children():
             child.destroy()
@@ -228,7 +319,8 @@ class MainView(tk.Tk):
             )
         else:
             self._build_placeholder(self.content, module)
-        self.status_var.set(f"Đang mở: {module.label}")
+
+    # ------------------------------------------------------------------ pages
 
     def _build_dashboard(self, parent: tk.Frame) -> None:
         wrapper = tk.Frame(parent, bg=BACKGROUND)
@@ -244,7 +336,7 @@ class MainView(tk.Tk):
         ).pack(fill="x")
         tk.Label(
             wrapper,
-            text=f"{self.session.role.label} — {self.session.role.description}",
+            text=f"{self.session.role.label}  —  {self.session.role.description}",
             bg=BACKGROUND,
             fg=MUTED,
             font=font(9),
@@ -266,50 +358,38 @@ class MainView(tk.Tk):
         cards.grid_columnconfigure(0, weight=1, uniform="card")
         cards.grid_columnconfigure(1, weight=1, uniform="card")
 
-        accessible = [module for module in self._modules if module is not AppModule.DASHBOARD]
-        for index, module in enumerate(accessible):
+        accessible = [m for m in self._modules if m is not AppModule.DASHBOARD]
+        for idx, module in enumerate(accessible):
             card = self._build_access_card(cards, module)
-            card.grid(row=index // 2, column=index % 2, sticky="nsew", padx=7, pady=7)
+            card.grid(row=idx // 2, column=idx % 2, sticky="nsew", padx=7, pady=7)
         for row in range((len(accessible) + 1) // 2):
             cards.grid_rowconfigure(row, weight=1)
 
     def _build_access_card(self, parent: tk.Frame, module: AppModule) -> tk.Frame:
         card = tk.Frame(
-            parent,
-            bg=SURFACE,
-            highlightbackground=BORDER,
-            highlightthickness=1,
+            parent, bg=SURFACE,
+            highlightbackground=BORDER, highlightthickness=1,
             cursor="hand2",
         )
         inner = tk.Frame(card, bg=SURFACE)
         inner.pack(fill="both", expand=True, padx=18, pady=14)
 
+        icon = _NAV_ICONS.get(module, "•")
         title = tk.Label(
-            inner,
-            text=module.label,
-            bg=SURFACE,
-            fg=PRIMARY_DARK,
-            font=font(10, "bold"),
-            anchor="w",
+            inner, text=f"{icon}  {module.label}",
+            bg=SURFACE, fg=PRIMARY_DARK,
+            font=font(10, "bold"), anchor="w",
         )
         title.pack(fill="x")
-        description = tk.Label(
-            inner,
-            text=module.description,
-            bg=SURFACE,
-            fg=MUTED,
-            font=font(8),
-            anchor="nw",
-            justify="left",
-            wraplength=280,
+        desc = tk.Label(
+            inner, text=module.description,
+            bg=SURFACE, fg=MUTED,
+            font=font(8), anchor="nw", justify="left", wraplength=280,
         )
-        description.pack(fill="both", expand=True, pady=(6, 0))
+        desc.pack(fill="both", expand=True, pady=(6, 0))
 
-        for widget in (card, inner, title, description):
-            widget.bind(
-                "<Button-1>",
-                lambda event, selected=module: self._select_module(selected),
-            )
+        for w in (card, inner, title, desc):
+            w.bind("<Button-1>", lambda e, m=module: self._select_module(m))
         return card
 
     def _build_placeholder(self, parent: tk.Frame, module: AppModule) -> None:
@@ -321,48 +401,14 @@ class MainView(tk.Tk):
         inner = tk.Frame(card, bg=SURFACE)
         inner.pack(fill="x", padx=30, pady=26)
 
-        tk.Label(
-            inner,
-            text=module.label,
-            bg=SURFACE,
-            fg=TEXT,
-            font=font(18, "bold"),
-            anchor="w",
-        ).pack(fill="x")
-        tk.Label(
-            inner,
-            text=f"Vai trò được phép: {module.allowed_roles_label}",
-            bg=SURFACE,
-            fg=MUTED,
-            font=font(8),
-            anchor="w",
-        ).pack(fill="x", pady=(6, 16))
-        tk.Label(
-            inner,
-            text=module.description,
-            bg=SURFACE,
-            fg=TEXT,
-            font=font(9),
-            anchor="w",
-            justify="left",
-            wraplength=640,
-        ).pack(fill="x")
+        tk.Label(inner, text=module.label, bg=SURFACE, fg=TEXT,
+                 font=font(18, "bold"), anchor="w").pack(fill="x")
+        tk.Label(inner, text=f"Vai trò được phép: {module.allowed_roles_label}",
+                 bg=SURFACE, fg=MUTED, font=font(8), anchor="w").pack(fill="x", pady=(6, 16))
+        tk.Label(inner, text=module.description, bg=SURFACE, fg=TEXT,
+                 font=font(9), anchor="w", justify="left", wraplength=640).pack(fill="x")
 
-        note = tk.Frame(inner, bg=BACKGROUND)
-        note.pack(fill="x", pady=(22, 0))
-        tk.Label(
-            note,
-            text=(
-                "Khung điều hướng và phân quyền đã được thiết lập. "
-                "Phần nghiệp vụ chi tiết của module này do thành viên phụ trách module đảm nhiệm."
-            ),
-            bg=BACKGROUND,
-            fg=MUTED,
-            font=font(8),
-            anchor="w",
-            justify="left",
-            wraplength=610,
-        ).pack(fill="x", padx=18, pady=14)
+    # ------------------------------------------------------------------ actions
 
     def _open_change_password(self) -> None:
         ChangePasswordDialog(self, self.auth_service)
