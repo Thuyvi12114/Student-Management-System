@@ -610,7 +610,11 @@ class GradeEntryView(tk.Frame):
                 self._session,
                 self._course.course_id,
                 self._selected_row.student_id,
-                "",                           # process_score – không nhập ở đây
+                (
+                    str(self._selected_row.process_score)
+                    if self._selected_row.process_score is not None
+                    else ""
+                ),
                 self._final_entry.get(),
                 self._selected_row.grade_id,
             )

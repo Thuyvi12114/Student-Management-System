@@ -7,15 +7,25 @@ from tkinter import messagebox
 
 from app.security.rbac import AppModule, RbacPolicy
 from app.security.session import Session
+from app.models import Role
 from app.service.auth_service import AuthService
+from app.service.account_service import AccountService
+from app.service.course_service import CourseService
 from app.service.grade_service import GradeService
+from app.service.lecturer_service import LecturerService
+from app.service.student_service import StudentService
 from app.ui.change_password_dialog import ChangePasswordDialog
+from app.ui.accounts import AccountManagementView
+from app.ui.courses import CourseManagementView
 from app.ui.grades import (
     AdminGradesView,
     GradeEntryView,
     LecturerCoursesView,
     StudentResultsView,
 )
+from app.ui.students import StudentManagementView
+from app.ui.lecturers import LecturerManagementView
+from app.ui.management.widgets import create_stat_card, run_in_background
 from app.ui.theme import (
     BACKGROUND,
     BORDER,
@@ -59,15 +69,24 @@ class MainView(tk.Tk):
         self,
         auth_service: AuthService,
         grade_service: GradeService,
+        student_service: StudentService,
+        lecturer_service: LecturerService,
+        account_service: AccountService,
+        course_service: CourseService,
         session: Session,
     ) -> None:
         super().__init__()
         self.auth_service = auth_service
         self.grade_service = grade_service
+        self.student_service = student_service
+        self.lecturer_service = lecturer_service
+        self.account_service = account_service
+        self.course_service = course_service
         self.session = session
         self.logout_requested = False
         self._modules = RbacPolicy.navigation_for(session.role)
         self._nav_buttons: dict[AppModule, tk.Button] = {}
+        self._navigation_generation = 0
 
         self.title(f"UniCore  •  Hệ thống quản lý sinh viên")
         self.geometry("1200x740")
@@ -272,7 +291,7 @@ class MainView(tk.Tk):
         ).pack(side="left", padx=24)
         tk.Label(
             bar,
-            text="Không gian quản trị  •  Dữ liệu minh hoạ",
+            text="UniCore  •  Dữ liệu hệ thống",
             bg=SURFACE,
             fg=MUTED,
             font=font(8),
@@ -290,6 +309,7 @@ class MainView(tk.Tk):
             )
             return
 
+        self._navigation_generation += 1
         for item, btn in self._nav_buttons.items():
             if item is module:
                 btn.configure(bg="#1D4ED8", fg="white", font=font(9, "bold"))
@@ -317,12 +337,29 @@ class MainView(tk.Tk):
             GradeEntryView(self.content, self.grade_service, self.session).pack(
                 fill="both", expand=True
             )
+        elif module is AppModule.STUDENT_MANAGEMENT:
+            StudentManagementView(
+                self.content, self.student_service, self.session
+            ).pack(fill="both", expand=True)
+        elif module is AppModule.LECTURER_MANAGEMENT:
+            LecturerManagementView(
+                self.content, self.lecturer_service, self.session
+            ).pack(fill="both", expand=True)
+        elif module is AppModule.ACCOUNT_MANAGEMENT:
+            AccountManagementView(
+                self.content, self.account_service, self.session
+            ).pack(fill="both", expand=True)
+        elif module is AppModule.COURSE_MANAGEMENT:
+            CourseManagementView(
+                self.content, self.course_service, self.lecturer_service, self.session
+            ).pack(fill="both", expand=True)
         else:
             self._build_placeholder(self.content, module)
 
     # ------------------------------------------------------------------ pages
 
     def _build_dashboard(self, parent: tk.Frame) -> None:
+        generation = self._navigation_generation
         wrapper = tk.Frame(parent, bg=BACKGROUND)
         wrapper.pack(fill="both", expand=True, padx=32, pady=28)
 
@@ -344,6 +381,69 @@ class MainView(tk.Tk):
             justify="left",
             wraplength=820,
         ).pack(fill="x", pady=(6, 0))
+
+        stats = tk.Frame(wrapper, bg=BACKGROUND)
+        stats.pack(fill="x", pady=(20, 0))
+        if self.session.role is Role.ADMIN:
+            metrics = (
+                ("Sinh viên", lambda result: result.total_students),
+                ("Giảng viên", lambda result: result.total_lecturers),
+                ("Môn học", lambda result: result.total_courses),
+                ("Lớp", lambda result: result.total_classes),
+            )
+            operation = lambda: self.student_service.dashboard(self.session)
+        elif self.session.role is Role.LECTURER:
+            metrics = (("Học phần được phân công", lambda result: result.assigned_courses),)
+            operation = lambda: self.student_service.dashboard(self.session)
+        else:
+            metrics = (
+                ("Học phần", lambda result: len(result.grades)),
+                (
+                    "Học phần đủ điểm",
+                    lambda result: sum(
+                        1 for grade in result.grades if grade.average_score is not None
+                    ),
+                ),
+                (
+                    "Trung bình theo tín chỉ",
+                    lambda result: f"{result.gpa:.2f}" if result.gpa is not None else "—",
+                ),
+            )
+            operation = lambda: self.grade_service.student_results(self.session)
+
+        for column in range(len(metrics)):
+            stats.grid_columnconfigure(column, weight=1, uniform="dashboard-stat")
+        stat_values = []
+        for column, (label, _value) in enumerate(metrics):
+            card, value = create_stat_card(stats, label)
+            card.grid(
+                row=0,
+                column=column,
+                sticky="nsew",
+                padx=(0 if column == 0 else 6, 0 if column == len(metrics) - 1 else 6),
+            )
+            stat_values.append(value)
+        self._dashboard_feedback = tk.Label(
+            wrapper, text="", bg=BACKGROUND, fg=MUTED, font=font(8), anchor="w"
+        )
+        self._dashboard_feedback.pack(fill="x", pady=(4, 0))
+
+        def loaded(result) -> None:
+            if generation != self._navigation_generation:
+                return
+            for value_label, (_label, get_value) in zip(stat_values, metrics):
+                value_label.configure(text=str(get_value(result)))
+
+        def failed(error: BaseException) -> None:
+            if generation != self._navigation_generation:
+                return
+            self._dashboard_feedback.configure(
+                text=f"Không tải được thống kê từ cơ sở dữ liệu: {error}",
+                fg="#B91C1C",
+            )
+
+        run_in_background(self, operation, loaded, failed)
+
         tk.Label(
             wrapper,
             text="Chức năng bạn có thể truy cập",

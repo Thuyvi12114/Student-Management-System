@@ -24,7 +24,13 @@ def main() -> None:
             break
 
         workspace = MainView(
-            context.auth_service, context.grade_service, login.session
+            context.auth_service,
+            context.grade_service,
+            context.student_service,
+            context.lecturer_service,
+            context.account_service,
+            context.course_service,
+            login.session,
         )
         workspace.mainloop()
         if not workspace.logout_requested:

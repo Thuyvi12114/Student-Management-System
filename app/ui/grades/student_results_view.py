@@ -33,7 +33,7 @@ _COLUMNS = [
     ("course_code", "Mã học phần",  110, "w"),
     ("course_name", "Tên học phần", 240, "w"),
     ("credits",     "Tín chỉ",       60, "center"),
-    ("final",       "Điểm cuối kỳ", 110, "center"),
+    ("final",       "Điểm tổng kết", 110, "center"),
     ("status",      "Trạng thái",   120, "center"),
 ]
 
@@ -135,7 +135,7 @@ class StudentResultsView(tk.Frame):
         self._count_label.pack(side="right")
 
         tk.Label(table_inner,
-                 text="Điểm cuối kỳ theo thang 0–10  •  Chỉ xem",
+                 text="Điểm tổng kết theo thang 0–10  •  Chỉ xem",
                  bg=SURFACE, fg=MUTED, font=font(8), anchor="w").pack(fill="x", pady=(0, 10))
 
         # Table
@@ -255,8 +255,8 @@ class StudentResultsView(tk.Frame):
             text=f"{s.full_name}  ·  {s.student_code}  ·  {s.class_name}"
         )
 
-        graded = [g for g in result.grades if g.final_score is not None]
-        pending = [g for g in result.grades if g.final_score is None]
+        graded = [g for g in result.grades if g.average_score is not None]
+        pending = [g for g in result.grades if g.average_score is None]
         total_courses = len(result.grades)
         graded_courses = len(graded)
 
@@ -266,10 +266,8 @@ class StudentResultsView(tk.Frame):
             text=f"{total_courses - graded_courses} học phần chưa có điểm"
         )
 
-        self._val_credit.configure(text=f"{result.total_credits} / {result.passed_credits + result.total_credits - result.passed_credits}")
-        # Recalculate for display: total_credits = credits of graded courses
-        tc = sum(g.credits for g in graded)
-        self._val_credit.configure(text=f"{tc} / {tc + sum(g.credits for g in pending)}")
+        total_credits = sum(g.credits for g in result.grades)
+        self._val_credit.configure(text=f"{result.total_credits} / {total_credits}")
         self._sub_credit.configure(
             text=f"Không bao gồm {sum(g.credits for g in pending)} tín chỉ chưa có điểm"
             if pending else "Tất cả học phần đã có điểm"
@@ -289,7 +287,7 @@ class StudentResultsView(tk.Frame):
                     grade.course_code,
                     grade.course_name,
                     grade.credits,
-                    format_score(grade.final_score),
+                    format_score(grade.average_score),
                     status_text,
                 ),
                 tags=row_tag(grade.status),
@@ -303,11 +301,11 @@ class StudentResultsView(tk.Frame):
         # GPA formula
         if graded:
             parts = " + ".join(
-                f"{format_score(g.final_score)} × {g.credits}" for g in graded
+                f"{format_score(g.average_score)} × {g.credits}" for g in graded
             )
-            formula_sym = "Σ(điểm cuối kỳ × số tín chỉ) / Σ(tín chỉ của học phần đã có điểm)"
+            formula_sym = "Σ(điểm tổng kết × số tín chỉ) / Σ(tín chỉ của học phần đủ điểm)"
             tc_graded = sum(g.credits for g in graded)
-            weighted = sum(g.final_score * g.credits for g in graded)
+            weighted = sum(g.average_score * g.credits for g in graded)
             gpa_calc = weighted / tc_graded if tc_graded else Decimal(0)
 
             self._formula_label.configure(text=formula_sym)

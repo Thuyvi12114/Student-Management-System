@@ -76,6 +76,17 @@ class UserAccount:
 
 
 @dataclass(frozen=True)
+class AccountSummary:
+    """Account fields safe for the Admin account list; excludes password data."""
+
+    account_id: int
+    username: str
+    full_name: str
+    role: Role
+    status: AccountStatus
+
+
+@dataclass(frozen=True)
 class Student:
     student_id: int
     account_id: int
@@ -101,6 +112,15 @@ class Lecturer:
     phone: str | None
     department: str
     degree: str
+
+
+@dataclass(frozen=True)
+class LecturerSearchResult:
+    items: list[Lecturer]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 @dataclass(frozen=True)
@@ -145,6 +165,62 @@ class StudentOption:
 
 
 @dataclass(frozen=True)
+class StudentSearchResult:
+    """Kết quả tìm kiếm sinh viên có hỗ trợ phân trang phía server."""
+
+    items: list["StudentRecord"]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+@dataclass(frozen=True)
+class LecturerStudent:
+    """Thông tin sinh viên được phép hiển thị cho giảng viên."""
+
+    student_id: int
+    full_name: str
+    class_name: str
+
+
+@dataclass(frozen=True)
+class LecturerStudentSearchResult:
+    items: list[LecturerStudent]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+@dataclass(frozen=True)
+class StudentRecord:
+    """Thông tin sinh viên đầy đủ theo các cột hiện có trong bảng Students."""
+
+    student_id: int
+    account_id: int
+    student_code: str
+    full_name: str
+    gender: str
+    date_of_birth: date
+    email: str
+    phone: str | None
+    class_name: str
+    enrollment_year: int
+
+
+@dataclass(frozen=True)
+class DashboardStats:
+    """Thống kê nhanh cho dashboard."""
+
+    total_students: int = 0
+    total_lecturers: int = 0
+    total_courses: int = 0
+    total_classes: int = 0
+    assigned_courses: int = 0
+
+
+@dataclass(frozen=True)
 class CourseOption:
     """Học phần kèm giảng viên phụ trách."""
 
@@ -160,6 +236,15 @@ class CourseOption:
     @property
     def label(self) -> str:
         return f"{self.course_code} - {self.course_name} ({self.credits} TC, {self.semester} {self.academic_year})"
+
+
+@dataclass(frozen=True)
+class CourseSearchResult:
+    items: list[CourseOption]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 @dataclass(frozen=True)
