@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 
 
@@ -122,3 +122,81 @@ class Grade:
     process_score: Decimal | None
     final_score: Decimal | None
     status: str
+
+
+def course_average(process_score: Decimal | None, final_score: Decimal | None) -> Decimal | None:
+    """Điểm trung bình học phần: 40% quá trình + 60% cuối kỳ."""
+    if process_score is None or final_score is None:
+        return None
+    return (process_score * Decimal("0.4") + final_score * Decimal("0.6")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
+
+@dataclass(frozen=True)
+class StudentOption:
+    """Sinh viên dùng cho bộ lọc và bảng điểm."""
+
+    student_id: int
+    student_code: str
+    full_name: str
+    class_name: str
+
+
+@dataclass(frozen=True)
+class CourseOption:
+    """Học phần kèm giảng viên phụ trách."""
+
+    course_id: int
+    course_code: str
+    course_name: str
+    credits: int
+    semester: str
+    academic_year: str
+    lecturer_id: int | None
+    lecturer_name: str | None
+
+    @property
+    def label(self) -> str:
+        return f"{self.course_code} - {self.course_name} ({self.credits} TC, {self.semester} {self.academic_year})"
+
+
+@dataclass(frozen=True)
+class GradeEntry:
+    """Một dòng điểm đã nhập, kèm thông tin sinh viên và học phần."""
+
+    grade_id: int
+    student_id: int
+    student_code: str
+    student_name: str
+    course_id: int
+    course_code: str
+    course_name: str
+    credits: int
+    semester: str
+    academic_year: str
+    process_score: Decimal | None
+    final_score: Decimal | None
+    status: str
+
+    @property
+    def average_score(self) -> Decimal | None:
+        return course_average(self.process_score, self.final_score)
+
+
+@dataclass(frozen=True)
+class CourseGradeRow:
+    """Sinh viên trong danh sách học phần; grade_id null nếu chưa nhập điểm."""
+
+    student_id: int
+    student_code: str
+    student_name: str
+    grade_id: int | None
+    process_score: Decimal | None
+    final_score: Decimal | None
+    status: str | None
+
+    @property
+    def average_score(self) -> Decimal | None:
+        return course_average(self.process_score, self.final_score)

@@ -23,7 +23,9 @@ def main() -> None:
         if login.session is None:
             break
 
-        workspace = MainView(context.auth_service, login.session)
+        workspace = MainView(
+            context.auth_service, context.grade_service, login.session
+        )
         workspace.mainloop()
         if not workspace.logout_requested:
             break

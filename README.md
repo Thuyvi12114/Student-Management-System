@@ -33,8 +33,12 @@ Student-Management-System/
     ├── context.py                # Nối các lớp: Config → DAO → Service
     ├── dao/
     │   ├── __init__.py
-    │   ├── errors.py             # DataAccessError
-    │   └── user_account_dao.py   # UserAccountDAO với prepared statement
+    │   ├── errors.py             # DataAccessError, DuplicateRecordError
+    │   ├── user_account_dao.py   # UserAccountDAO với prepared statement
+    │   ├── student_dao.py        # Hồ sơ sinh viên cho bộ lọc / kết quả
+    │   ├── lecturer_dao.py       # Kiểm tra phân công giảng viên
+    │   ├── course_dao.py         # Học phần kèm giảng viên phụ trách
+    │   └── grade_dao.py          # GradeDAO: điểm, roster, tra cứu
     ├── security/
     │   ├── __init__.py
     │   ├── password_hasher.py    # Băm/kiểm tra PBKDF2
@@ -43,14 +47,22 @@ Student-Management-System/
     │   └── rbac.py               # AppModule + RbacPolicy
     ├── service/
     │   ├── __init__.py
-    │   ├── exceptions.py         # ServiceError, AuthError, ValidationError
-    │   └── auth_service.py       # Đăng nhập, đăng xuất, đổi mật khẩu
+    │   ├── exceptions.py         # ServiceError, AuthError, ValidationError, AuthorizationError
+    │   ├── auth_service.py       # Đăng nhập, đăng xuất, đổi mật khẩu
+    │   └── grade_service.py      # Điểm số, phân công giảng viên, GPA theo tín chỉ
     └── ui/
         ├── __init__.py
         ├── theme.py              # Màu, font, widget dùng chung
         ├── login_view.py         # UI 1.1 — màn hình đăng nhập
         ├── main_view.py          # Khung điều hướng RBAC sau đăng nhập
-        └── change_password_dialog.py
+        ├── change_password_dialog.py
+        └── grades/
+            ├── __init__.py
+            ├── widgets.py             # Bảng, thẻ số liệu, định dạng điểm
+            ├── student_results_view.py    # UI 1.5 — kết quả học tập
+            ├── admin_grades_view.py       # UI 1.11 — Admin tra cứu điểm
+            ├── lecturer_courses_view.py   # UI 1.13 — học phần & điểm
+            └── grade_entry_view.py        # UI 1.16 — nhập & cập nhật điểm
 ```
 
 Luồng phụ thuộc một chiều: **UI → Service → DAO → Database**.
@@ -141,7 +153,9 @@ Mật khẩu trong CSDL chỉ tồn tại dưới dạng băm PBKDF2; mật kh�
 | Quản lý sinh viên | ✓ |  |  |
 | Quản lý giảng viên | ✓ |  |  |
 | Quản lý môn học | ✓ | ✓ |  |
-| Quản lý điểm | ✓ | ✓ |  |
+| Tra cứu điểm | ✓ |  |  |
+| Nhập & cập nhật điểm |  | ✓ |  |
+| Học phần & điểm |  | ✓ |  |
 | Kết quả học tập |  |  | ✓ |
 | Thông tin cá nhân | ✓ | ✓ | ✓ |
 
@@ -161,7 +175,25 @@ kiểm tra lại bằng `RbacPolicy.can_access` trước khi mở nội dung.
 | Khung điều hướng phân quyền 3 vai trò | `app/ui/main_view.py`, `app/security/rbac.py` |
 
 Use case liên quan: **FR-02**, **UC-04** (đăng nhập), **UC-05** (đăng xuất),
-**UC-06** (đổi mật khẩu), **UI 1.1** (Login).
+**UC-06** (đổi mật khẩu), **UI 1.1** (Login), **FR-06**, **UC-15/UC-16/UC-17**
+(nhập, cập nhật và tra cứu điểm), **UI 1.5, 1.11, 1.13, 1.16**.
+
+## 7.1. Quy tắc nghiệp vụ điểm số
+
+- Mỗi bản ghi điểm ứng với một cặp (`StudentID`, `CourseID`); ràng buộc UNIQUE ở CSDL và
+  kiểm tra ở `GradeService` ngăn nhập trùng.
+- Chỉ giảng viên được phân công (`Courses.LecturerID` khớp hồ sơ giảng viên của tài khoản)
+  mới được thêm/sửa điểm; Admin chỉ tra cứu, sinh viên chỉ xem kết quả của mình.
+- Điểm quá trình và điểm cuối kỳ nằm trong 0–10, tối đa 2 chữ số thập phân; được phép nhập
+  một trong hai loại trước, khi đó trạng thái là `PENDING`.
+- Điểm trung bình học phần = 40% quá trình + 60% cuối kỳ, làm tròn 2 chữ số thập phân;
+  `PASSED` khi trung bình ≥ 5.0, ngược lại `FAILED`.
+- GPA tích lũy = tổng (điểm trung bình học phần × số tín chỉ) / tổng tín chỉ của các học
+  phần đã đủ cả hai đầu điểm.
+
+Các màn hình: `student_results_view.py` (sinh viên), `admin_grades_view.py` (Admin lọc theo
+sinh viên/học phần), `lecturer_courses_view.py` (chi tiết học phần) và
+`grade_entry_view.py` (nhập/cập nhật điểm).
 
 ## 8. Ghi chú bảo mật
 
@@ -171,6 +203,8 @@ Use case liên quan: **FR-02**, **UC-04** (đăng nhập), **UC-05** (đăng xu�
 - Tài khoản `INACTIVE` bị chặn khi đăng nhập và bị kiểm tra lại mỗi lần thao tác cần phiên hợp lệ.
 - Đăng xuất hủy token phiên trong `SessionManager`; phiên có thời hạn 8 giờ.
 - Thông tin kết nối MySQL nằm ngoài mã nguồn (`config.ini` / biến môi trường), không commit lên Git.
+- Phân công giảng viên được kiểm tra ở tầng service trước mọi thao tác ghi/sửa điểm, không
+  chỉ dựa vào việc ẩn nút trên giao diện.
 
 ## 9. Git / GitHub
 

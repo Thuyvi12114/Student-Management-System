@@ -35,14 +35,24 @@ class AppModule(Enum):
         "Danh mục môn học, số tín chỉ, học kỳ, năm học và giảng viên phụ trách.",
         frozenset({Role.ADMIN, Role.LECTURER}),
     )
+    ADMIN_GRADE_LOOKUP = (
+        "Tra cứu điểm",
+        "Xem bảng điểm toàn hệ thống và lọc theo sinh viên hoặc học phần (chỉ đọc).",
+        frozenset({Role.ADMIN}),
+    )
     GRADE_MANAGEMENT = (
-        "Quản lý điểm",
-        "Nhập và cập nhật điểm quá trình, điểm cuối kỳ cho sinh viên.",
-        frozenset({Role.ADMIN, Role.LECTURER}),
+        "Nhập & cập nhật điểm",
+        "Nhập điểm quá trình, điểm cuối kỳ và cập nhật điểm cho sinh viên.",
+        frozenset({Role.LECTURER}),
+    )
+    LECTURER_COURSE_GRADES = (
+        "Học phần & điểm",
+        "Xem chi tiết học phần được phân công và bảng điểm sinh viên.",
+        frozenset({Role.LECTURER}),
     )
     MY_GRADES = (
         "Kết quả học tập",
-        "Xem bảng điểm và trạng thái đạt/không đạt của các môn đã học.",
+        "Xem bảng điểm và điểm trung bình tích lũy theo tín chỉ của sinh viên.",
         frozenset({Role.STUDENT}),
     )
     PROFILE = (

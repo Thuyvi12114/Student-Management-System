@@ -8,7 +8,14 @@ from tkinter import messagebox
 from app.security.rbac import AppModule, RbacPolicy
 from app.security.session import Session
 from app.service.auth_service import AuthService
+from app.service.grade_service import GradeService
 from app.ui.change_password_dialog import ChangePasswordDialog
+from app.ui.grades import (
+    AdminGradesView,
+    GradeEntryView,
+    LecturerCoursesView,
+    StudentResultsView,
+)
 from app.ui.theme import (
     BACKGROUND,
     BORDER,
@@ -27,9 +34,15 @@ from app.ui.theme import (
 class MainView(tk.Tk):
     """Cửa sổ sau đăng nhập; lưu ``logout_requested`` khi người dùng đăng xuất."""
 
-    def __init__(self, auth_service: AuthService, session: Session) -> None:
+    def __init__(
+        self,
+        auth_service: AuthService,
+        grade_service: GradeService,
+        session: Session,
+    ) -> None:
         super().__init__()
         self.auth_service = auth_service
+        self.grade_service = grade_service
         self.session = session
         self.logout_requested = False
         self._modules = RbacPolicy.navigation_for(session.role)
@@ -197,6 +210,22 @@ class MainView(tk.Tk):
 
         if module is AppModule.DASHBOARD:
             self._build_dashboard(self.content)
+        elif module is AppModule.MY_GRADES:
+            StudentResultsView(self.content, self.grade_service, self.session).pack(
+                fill="both", expand=True
+            )
+        elif module is AppModule.ADMIN_GRADE_LOOKUP:
+            AdminGradesView(self.content, self.grade_service, self.session).pack(
+                fill="both", expand=True
+            )
+        elif module is AppModule.LECTURER_COURSE_GRADES:
+            LecturerCoursesView(self.content, self.grade_service, self.session).pack(
+                fill="both", expand=True
+            )
+        elif module is AppModule.GRADE_MANAGEMENT:
+            GradeEntryView(self.content, self.grade_service, self.session).pack(
+                fill="both", expand=True
+            )
         else:
             self._build_placeholder(self.content, module)
         self.status_var.set(f"Đang mở: {module.label}")

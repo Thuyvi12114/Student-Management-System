@@ -11,3 +11,7 @@ class AuthError(ServiceError):
 
 class ValidationError(ServiceError):
     """Dữ liệu người dùng nhập không hợp lệ."""
+
+
+class AuthorizationError(ServiceError):
+    """Người dùng không có quyền thực hiện thao tác nghiệp vụ."""
