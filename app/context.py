@@ -41,7 +41,7 @@ class AppContext:
 
         grade_dao = GradeDAO(database)
         course_dao = CourseDAO(database)
-        student_dao = StudentDAO(database, account_dao)
+        student_dao = StudentDAO(database)
         lecturer_dao = LecturerDAO(database)
 
         grade_service = GradeService(
@@ -52,7 +52,6 @@ class AppContext:
         )
         student_service = StudentService(
             student_dao=student_dao,
-            lecturer_dao=lecturer_dao,
             user_account_dao=account_dao,
         )
         lecturer_service = LecturerService(lecturer_dao)

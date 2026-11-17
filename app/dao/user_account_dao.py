@@ -180,6 +180,48 @@ class UserAccountDAO:
             require_row=True,
         )
 
+    def insert(
+        self,
+        username: str,
+        password_hash: str,
+        role: Role,
+        conn=None,
+        full_name: str = "",
+        status: AccountStatus = AccountStatus.ACTIVE,
+    ) -> int:
+        """Insert tài khoản trong hoặc ngoài transaction; trả về AccountID mới."""
+        sql = _INSERT
+        params = (username, password_hash, full_name or username, role.value, status.value)
+        try:
+            if conn is not None:
+                cur = conn.cursor(prepared=True)
+                try:
+                    cur.execute(sql, params)
+                    return int(cur.lastrowid)
+                finally:
+                    cur.close()
+            return self.create(username, password_hash, full_name or username, role, status)
+        except mysql.connector.IntegrityError as exc:
+            from app.dao.errors import DuplicateRecordError
+            if exc.errno == 1062:
+                raise DuplicateRecordError("Tên đăng nhập đã tồn tại.") from exc
+            raise DataAccessError(f"Không tạo tài khoản được: {exc}") from exc
+
+    def delete(self, account_id: int, conn=None) -> None:
+        """Xóa tài khoản; thường được gọi trong transaction cùng StudentDAO.delete."""
+        sql = "DELETE FROM UserAccounts WHERE AccountID = %s"
+        try:
+            if conn is not None:
+                cur = conn.cursor(prepared=True)
+                try:
+                    cur.execute(sql, (account_id,))
+                finally:
+                    cur.close()
+                return
+            self._execute(sql, (account_id,), "xóa tài khoản", require_row=False)
+        except mysql.connector.Error as exc:
+            raise DataAccessError(f"Không xóa tài khoản được: {exc}") from exc
+
     def _find_one(self, sql: str, params: tuple[object, ...], action: str) -> UserAccount | None:
         try:
             with contextlib.closing(self._database.connect()) as connection:

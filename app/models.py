@@ -195,18 +195,17 @@ class LecturerStudentSearchResult:
 
 @dataclass(frozen=True)
 class StudentRecord:
-    """Thông tin sinh viên đầy đủ theo các cột hiện có trong bảng Students."""
+    """Thông tin sinh viên đầy đủ — dùng cho cả module cũ và module accounts-student."""
 
-    student_id: int
+    student_id: str          # mã sinh viên dạng chuỗi, VD "SV2024001"
     account_id: int
-    student_code: str
     full_name: str
-    gender: str
     date_of_birth: date
+    gender: str
     email: str
     phone: str | None
-    class_name: str
-    enrollment_year: int
+    address: str | None = None
+    class_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -277,6 +276,7 @@ class CourseGradeRow:
     student_id: int
     student_code: str
     student_name: str
+    class_name: str
     grade_id: int | None
     process_score: Decimal | None
     final_score: Decimal | None
