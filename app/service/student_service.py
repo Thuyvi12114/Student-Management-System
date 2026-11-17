@@ -1,244 +1,111 @@
-"""Nghiệp vụ sinh viên: tìm kiếm, xem hồ sơ và dashboard."""
+"""UC-09/10/11/18/19 Quản lý sinh viên - thêm, sửa, xóa (Module 3, Nghĩa)."""
 
 from __future__ import annotations
 
-import re
 from datetime import date
 
-from app.dao.errors import DuplicateRecordError
-from app.dao.lecturer_dao import LecturerDAO
+from app.dao.errors import DataAccessError, DuplicateRecordError
 from app.dao.student_dao import StudentDAO
 from app.dao.user_account_dao import UserAccountDAO
-from app.models import (
-    DashboardStats,
-    LecturerStudentSearchResult,
-    Role,
-    StudentRecord,
-    StudentSearchResult,
-)
+from app.models import Role, StudentRecord
 from app.security.password_hasher import hash_password
-from app.security.password_policy import violations as password_violations
+from app.security.password_policy import violations
 from app.security.session import Session
-from app.service.exceptions import AuthorizationError, ValidationError
+from app.service import validators as v
+from app.service.access import require_role
+from app.service.exceptions import ValidationError
 
-_EMAIL_PATTERN = re.compile(
-    r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
-    r"[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?"
-    r"(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$",
-    re.IGNORECASE,
-)
+_ADMIN_ONLY = "Chỉ quản trị viên mới được quản lý sinh viên."
 
 
 class StudentService:
-    def __init__(
-        self,
-        student_dao: StudentDAO,
-        lecturer_dao: LecturerDAO,
-        user_account_dao: UserAccountDAO,
-    ) -> None:
+    def __init__(self, student_dao: StudentDAO, user_account_dao: UserAccountDAO) -> None:
         self._student_dao = student_dao
-        self._lecturer_dao = lecturer_dao
-        self._user_account_dao = user_account_dao
+        self._account_dao = user_account_dao
 
+    # ---- UC-19 --------------------------------------------------------
+    def is_student_id_available(self, session: Session, student_id: str) -> bool:
+        """UC-19 Check Duplicate Student ID: chỉ đọc, không sửa dữ liệu."""
+        require_role(session, Role.ADMIN, _ADMIN_ONLY)
+        code = v.identifier(student_id, "Mã sinh viên")
+        return not self._student_dao.exists(code) and not self._account_dao.username_exists(code)
+
+    # ---- UC-09 --------------------------------------------------------
     def create(
-        self,
-        session: Session,
-        *,
-        student_code: str,
-        full_name: str,
-        gender: str,
-        date_of_birth: date,
-        email: str,
-        phone: str | None,
-        class_name: str,
-        enrollment_year: int,
-        password: str,
+        self, session: Session, *, student_id: str, full_name: str, gender: str, date_of_birth: date | str,
+        email: str, phone: str, address: str | None, class_name: str, password: str,
     ) -> StudentRecord:
-        self._require_admin(session)
-        student_code = (student_code or "").strip().upper()
-        if not 3 <= len(student_code) <= 20:
-            raise ValidationError("Mã sinh viên phải có từ 3 đến 20 ký tự.")
-        values = self._normalize_profile(
-            full_name=full_name,
-            gender=gender,
-            date_of_birth=date_of_birth,
-            email=email,
-            phone=phone,
-            class_name=class_name,
-            enrollment_year=enrollment_year,
-        )
-        password_errors = password_violations(password)
-        if password_errors:
-            raise ValidationError(" ".join(password_errors))
-
-        if self._student_dao.student_code_exists(student_code):
+        require_role(session, Role.ADMIN, _ADMIN_ONLY)
+        code = v.identifier(student_id, "Mã sinh viên")
+        clean = self._clean(full_name, gender, date_of_birth, email, phone, address, class_name)
+        errors = violations(password)
+        if errors:
+            raise ValidationError(" ".join(errors))
+        if self._student_dao.exists(code):  # AF1
             raise ValidationError("Mã sinh viên đã tồn tại.")
-        if self._user_account_dao.username_exists(student_code):
-            raise ValidationError("Tên đăng nhập đã tồn tại.")
-        if self._student_dao.email_exists(email):
-            raise ValidationError("Email sinh viên đã tồn tại.")
-
+        if self._account_dao.username_exists(code):  # AF2
+            raise ValidationError("Tên đăng nhập trùng mã sinh viên đã được tài khoản khác sử dụng.")
         try:
-            return self._student_dao.create_with_account(
-                student_code=student_code,
-                password_hash=hash_password(password),
-                **values,
-            )
+            # Một giao dịch duy nhất: tài khoản + hồ sơ, lỗi bất kỳ thì rollback cả hai (AF4).
+            with self._student_dao.transaction("tạo sinh viên") as conn:
+                account_id = self._account_dao.insert(code, hash_password(password), Role.STUDENT, conn=conn)
+                self._student_dao.insert(StudentRecord(code, account_id, **clean), conn=conn)
         except DuplicateRecordError as exc:
-            raise ValidationError(str(exc)) from exc
+            raise ValidationError("Mã sinh viên hoặc tên đăng nhập đã tồn tại.") from exc
+        created = self._student_dao.find_by_id(code)
+        if created is None:
+            raise DataAccessError("Đã tạo sinh viên nhưng không đọc lại được hồ sơ.")
+        return created
 
-    def search_students(
-        self,
-        session: Session,
-        keyword: str | None = None,
-        *,
-        page: int = 1,
-        page_size: int = 20,
-        class_name: str | None = None,
-    ) -> StudentSearchResult | LecturerStudentSearchResult:
-        if page < 1:
-            page = 1
-        if page_size < 1 or page_size > 200:
-            raise ValidationError("Kích thước trang phải nằm trong khoảng 1 đến 200.")
-        if session.role is Role.ADMIN:
-            self._require_admin(session)
-            return self._student_dao.search_admin(
-                keyword, page=page, page_size=page_size, class_name=class_name
-            )
-        if session.role is Role.LECTURER:
-            return self._student_dao.search_lecturer(
-                keyword, page=page, page_size=page_size
-            )
-        raise AuthorizationError(
-            "Sinh viên không được phép tìm kiếm hồ sơ của các sinh viên khác."
-        )
-
-    def class_names(self, session: Session) -> list[str]:
-        self._require_admin(session)
-        return self._student_dao.list_class_names()
-
-    def student_detail(self, session: Session, student_id: int) -> StudentRecord:
-        self._require_admin(session)
-        record = self._student_dao.find_admin_record(student_id)
-        if record is None:
-            raise ValidationError("Sinh viên không tồn tại.")
-        return record
-
+    # ---- UC-10 --------------------------------------------------------
     def update(
-        self,
-        session: Session,
-        student_id: int,
-        *,
-        full_name: str,
-        gender: str,
-        date_of_birth: date,
-        email: str,
-        phone: str | None,
-        class_name: str,
-        enrollment_year: int,
+        self, session: Session, student_id: str, *, full_name: str, gender: str, date_of_birth: date | str,
+        email: str, phone: str, address: str | None, class_name: str,
     ) -> StudentRecord:
-        self._require_admin(session)
-        current = self._student_dao.find_admin_record(student_id)
-        if current is None:
+        """Mã sinh viên và account_id bất biến; các trường còn lại được sửa."""
+        require_role(session, Role.ADMIN, _ADMIN_ONLY)
+        current = self._student_dao.find_by_id(student_id)
+        if current is None:  # AF1
             raise ValidationError("Sinh viên không tồn tại.")
-        values = self._normalize_profile(
-            full_name=full_name,
-            gender=gender,
-            date_of_birth=date_of_birth,
-            email=email,
-            phone=phone,
-            class_name=class_name,
-            enrollment_year=enrollment_year,
-        )
-        try:
-            return self._student_dao.update_profile(
-                student_id=student_id,
-                account_id=current.account_id,
-                **values,
-            )
-        except DuplicateRecordError as exc:
-            raise ValidationError(str(exc)) from exc
+        clean = self._clean(full_name, gender, date_of_birth, email, phone, address, class_name)
+        self._student_dao.update(StudentRecord(current.student_id, current.account_id, **clean))
+        return self._student_dao.find_by_id(student_id)  # type: ignore[return-value]
 
-    def delete(self, session: Session, student_id: int) -> None:
-        self._require_admin(session)
-        if self._student_dao.find_admin_record(student_id) is None:
+    # ---- UC-11 (+ UC-18 xác nhận ở giao diện) ----------------------------
+    def can_delete(self, session: Session, student_id: str) -> None:
+        """Bước kiểm tra trước khi hỏi xác nhận: tồn tại và không còn điểm (AF1/AF3)."""
+        require_role(session, Role.ADMIN, _ADMIN_ONLY)
+        if self._student_dao.find_by_id(student_id) is None:
             raise ValidationError("Sinh viên không tồn tại.")
-        if not self._student_dao.delete_if_without_grades(student_id):
+        if self._student_dao.count_grades(student_id) > 0:
             raise ValidationError(
-                "Không thể xóa sinh viên đã có bản ghi điểm. "
-                "Hãy giữ hồ sơ để bảo toàn lịch sử học tập."
+                "Không thể xóa sinh viên đã có bản ghi điểm. Hãy giữ hồ sơ để bảo toàn lịch sử học tập."
             )
 
-    def dashboard(self, session: Session) -> DashboardStats:
-        if session.role is Role.ADMIN:
-            self._require_admin(session)
-            return self._student_dao.admin_dashboard_stats()
-        if session.role is Role.LECTURER:
-            lecturer_id = self._lecturer_dao.find_id_by_account(session.account_id)
-            if lecturer_id is None:
-                raise AuthorizationError(
-                    "Tài khoản chưa được liên kết với hồ sơ giảng viên."
-                )
-            return self._student_dao.lecturer_dashboard_stats(lecturer_id)
-        raise AuthorizationError(
-            "Thông tin dashboard quản lý không dành cho sinh viên."
-        )
-
-    @staticmethod
-    def _require_admin(session: Session) -> None:
-        if (
-            not isinstance(session, Session)
-            or session.is_expired()
-            or session.role is not Role.ADMIN
-        ):
-            raise AuthorizationError("Chỉ quản trị viên đang đăng nhập mới có quyền thêm sinh viên.")
-
-    @staticmethod
-    def _normalize_profile(
-        *,
-        full_name: str,
-        gender: str,
-        date_of_birth: date,
-        email: str,
-        phone: str | None,
-        class_name: str,
-        enrollment_year: int,
-    ) -> dict[str, object]:
-        full_name = (full_name or "").strip()
-        email = (email or "").strip().lower()
-        class_name = (class_name or "").strip()
-        phone = (phone or "").strip() or None
-
-        if not full_name or not gender or not email or not class_name:
-            raise ValidationError("Vui lòng nhập đầy đủ các trường bắt buộc.")
-        if len(full_name) > 100:
-            raise ValidationError("Họ tên không được vượt quá 100 ký tự.")
-        if gender not in {"Male", "Female", "Other"}:
-            raise ValidationError("Giới tính không hợp lệ.")
-        if type(date_of_birth) is not date or date_of_birth > date.today():
-            raise ValidationError("Ngày sinh không hợp lệ.")
-        if len(email) > 100 or not _EMAIL_PATTERN.fullmatch(email):
-            raise ValidationError("Email không hợp lệ.")
-        if phone is not None:
-            digits = phone[1:] if phone.startswith("+") else phone
-            if (
-                len(phone) > 15
-                or not digits.isdigit()
-                or not 7 <= len(digits) <= 15
-            ):
+    def delete(self, session: Session, student_id: str) -> None:
+        """Xóa hồ sơ và tài khoản trong một giao dịch; khóa dòng để tránh điểm xuất hiện giữa chừng."""
+        require_role(session, Role.ADMIN, _ADMIN_ONLY)
+        with self._student_dao.transaction("xóa sinh viên") as conn:
+            row = self._student_dao.query(
+                "SELECT account_id FROM Students WHERE student_id = %s FOR UPDATE", (student_id,), conn=conn
+            )
+            if not row:
+                raise ValidationError("Sinh viên không tồn tại.")
+            if self._student_dao.count_grades(student_id, conn=conn) > 0:
                 raise ValidationError(
-                    "Số điện thoại phải có từ 7 đến 15 chữ số, có thể bắt đầu bằng dấu +."
+                    "Không thể xóa sinh viên đã có bản ghi điểm. Hãy giữ hồ sơ để bảo toàn lịch sử học tập."
                 )
-        if len(class_name) > 30:
-            raise ValidationError("Tên lớp không được vượt quá 30 ký tự.")
-        if type(enrollment_year) is not int or not 2000 <= enrollment_year <= 2100:
-            raise ValidationError("Năm nhập học phải nằm trong khoảng 2000 đến 2100.")
+            self._student_dao.delete(student_id, conn=conn)
+            self._account_dao.delete(int(row[0][0]), conn=conn)
+
+    @staticmethod
+    def _clean(full_name, gender, date_of_birth, email, phone, address, class_name) -> dict:
         return {
-            "full_name": full_name,
-            "gender": gender,
-            "date_of_birth": date_of_birth,
-            "email": email,
-            "phone": phone,
-            "class_name": class_name,
-            "enrollment_year": enrollment_year,
+            "full_name": v.required_text(full_name, "Họ và tên", 100),
+            "date_of_birth": v.birth_date(date_of_birth),
+            "gender": v.gender(gender),
+            "email": v.email(email),
+            "phone": v.phone(phone),
+            "address": v.optional_text(address, "Địa chỉ", 255),
+            "class_name": v.required_text(class_name, "Lớp", 50),
         }

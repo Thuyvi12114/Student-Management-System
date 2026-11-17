@@ -1,15 +1,16 @@
-"""Database-backed student management page for administrators."""
+"""UI 1.8 / 1.9 - Quản lý sinh viên (Module 3, Nghĩa): UC-09 thêm, UC-10 sửa, UC-11 xóa,
+UC-18 xác nhận xóa, UC-19 kiểm tra trùng mã sinh viên."""
 
 from __future__ import annotations
 
 import tkinter as tk
-from datetime import datetime
 from tkinter import messagebox, ttk
 
 from app.dao.errors import DataAccessError
 from app.models import DashboardStats, StudentRecord, StudentSearchResult
 from app.security.session import Session
 from app.service.exceptions import ServiceError
+from app.service.student_search_service import StudentSearchService
 from app.service.student_service import StudentService
 from app.ui.management.widgets import (
     configure_management_table,
@@ -40,10 +41,12 @@ class StudentManagementView(tk.Frame):
         self,
         parent: tk.Misc,
         student_service: StudentService,
+        search_service: StudentSearchService,
         session: Session,
     ) -> None:
         super().__init__(parent, bg=BACKGROUND)
         self._service = student_service
+        self._search = search_service
         self._session = session
         self._page = 1
         self._page_count = 0
@@ -70,7 +73,7 @@ class StudentManagementView(tk.Frame):
         ).pack(fill="x")
         tk.Label(
             title_copy,
-            text="Tìm kiếm, xem và quản lý hồ sơ sinh viên đang lưu trong cơ sở dữ liệu.",
+            text="Thêm, sửa, xóa hồ sơ sinh viên. Không thể xóa sinh viên đã có điểm.",
             bg=BACKGROUND,
             fg=MUTED,
             font=font(9),
@@ -252,15 +255,15 @@ class StudentManagementView(tk.Frame):
         page = self._page
 
         def fetch():
-            result = self._service.search_students(
+            result = self._search.search_students(
                 self._session,
                 keyword,
                 page=page,
                 page_size=_PAGE_SIZE,
                 class_name=class_name,
             )
-            stats = self._service.dashboard(self._session) if refresh_options else None
-            classes = self._service.class_names(self._session) if refresh_options else None
+            stats = self._search.dashboard(self._session) if refresh_options else None
+            classes = self._search.class_names(self._session) if refresh_options else None
             return result, stats, classes
 
         run_in_background(
@@ -367,15 +370,15 @@ class StudentManagementView(tk.Frame):
         action_index = min(2, max(0, relative_x * 3 // max(bounds[2], 1)))
         self._tree.selection_set(item)
         self._tree.focus(item)
-        self.after_idle(lambda: self._run_row_action(int(item), int(action_index)))
+        self.after_idle(lambda: self._run_row_action(str(item), int(action_index)))
         return "break"
 
     def _on_double_click(self, event: tk.Event) -> None:
         item = self._tree.identify_row(event.y)
         if item:
-            self._show_detail(int(item))
+            self._show_detail(str(item))
 
-    def _run_row_action(self, student_id: int, action_index: int) -> None:
+    def _run_row_action(self, student_id: str, action_index: int) -> None:
         if action_index == 0:
             self._show_detail(student_id)
         elif action_index == 1:
@@ -383,10 +386,10 @@ class StudentManagementView(tk.Frame):
         else:
             self._delete_student(student_id)
 
-    def _show_detail(self, student_id: int) -> None:
+    def _show_detail(self, student_id: str) -> None:
         run_in_background(
             self,
-            lambda: self._service.student_detail(self._session, student_id),
+            lambda: self._search.student_detail(self._session, student_id),
             lambda record: StudentDetailDialog(self, record),
             lambda error: self._feedback.configure(text=self._error_message(error)),
         )
@@ -400,10 +403,10 @@ class StudentManagementView(tk.Frame):
                 on_saved=lambda _record: self._refresh_after_save(),
             )
 
-    def _open_edit(self, student_id: int) -> None:
+    def _open_edit(self, student_id: str) -> None:
         run_in_background(
             self,
-            lambda: self._service.student_detail(self._session, student_id),
+            lambda: self._search.student_detail(self._session, student_id),
             lambda record: StudentFormDialog(
                 self,
                 self._service,
@@ -418,26 +421,46 @@ class StudentManagementView(tk.Frame):
         self._page = 1
         self._load(refresh_options=True)
 
-    def _delete_student(self, student_id: int) -> None:
-        selected = self._tree.item(str(student_id), "values")
-        name = selected[1] if selected else f"ID {student_id}"
-        if not messagebox.askyesno(
-            "Xác nhận xóa sinh viên",
-            f"Xóa hồ sơ {name} và tài khoản liên kết?\n"
-            "Thao tác chỉ thực hiện được khi sinh viên chưa có bản ghi điểm.",
-            parent=self,
-        ):
-            return
+    def _delete_student(self, student_id: str) -> None:
+        """UC-11: kiểm tra tồn tại + điểm liên quan trước, rồi mới hỏi xác nhận (UC-18)."""
         if self._loading:
             return
-
+        selected = (
+            self._tree.item(student_id, "values") if self._tree.exists(student_id) else None
+        )
+        name = selected[1] if selected else student_id
         self._loading = True
         self._set_controls_enabled(False)
+
+        def checked(_result: None) -> None:
+            self._loading = False
+            self._set_controls_enabled(True)
+            if not self._confirm_delete(student_id, name):  # UC-18 AF1: hủy
+                return
+            self._loading = True
+            self._set_controls_enabled(False)
+            run_in_background(
+                self,
+                lambda: self._service.delete(self._session, student_id),
+                self._delete_succeeded,
+                self._delete_failed,
+            )
+
         run_in_background(
             self,
-            lambda: self._service.delete(self._session, student_id),
-            self._delete_succeeded,
-            self._delete_failed,
+            lambda: self._service.can_delete(self._session, student_id),
+            checked,
+            self._delete_failed,  # AF1/AF3: còn điểm hoặc không tồn tại → báo lỗi, không xóa
+        )
+
+    def _confirm_delete(self, student_id: str, name: str) -> bool:
+        """UC-18 Confirm Deletion: nêu rõ sinh viên sắp bị xóa."""
+        return messagebox.askyesno(
+            "Xác nhận xóa sinh viên",
+            f"Xóa sinh viên {student_id} - {name}?\n\n"
+            "Hồ sơ và tài khoản đăng nhập liên kết sẽ bị xóa cùng lúc và không thể khôi phục.",
+            icon="warning",
+            parent=self,
         )
 
     def _delete_succeeded(self, _result: None) -> None:
@@ -483,6 +506,7 @@ class StudentFormDialog(tk.Toplevel):
         self._record = record
         self._on_saved = on_saved
         self._busy = False
+        self._id_after: str | None = None
         self._fields: dict[str, ttk.Entry | ttk.Combobox] = {}
         self.title("Chỉnh sửa sinh viên" if record else "Thêm sinh viên")
         self.configure(bg=BACKGROUND)
@@ -490,7 +514,7 @@ class StudentFormDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self._build()
-        self.geometry("660x600")
+        self.geometry("680x640")
         self.after(100, self._focus_first_field)
 
     def _build(self) -> None:
@@ -502,7 +526,7 @@ class StudentFormDialog(tk.Toplevel):
         )
         tk.Label(
             body,
-            text="Thông tin được lưu trực tiếp vào MySQL. Mã sinh viên là tên đăng nhập và không thể sửa.",
+            text="Tạo sinh viên sẽ tạo luôn tài khoản Sinh viên (tên đăng nhập = mã sinh viên) trong cùng một giao dịch.",
             bg=BACKGROUND,
             fg=MUTED,
             font=font(8),
@@ -517,31 +541,34 @@ class StudentFormDialog(tk.Toplevel):
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
 
-        code = self._field(grid, "Mã sinh viên *", "student_code", 0, 0)
+        code = self._field(grid, "Mã sinh viên * (cũng là tên đăng nhập)", "student_id", 0, 0)
+        self._id_status = tk.Label(grid, text="", bg=SURFACE, fg=MUTED, font=font(8), anchor="w")
+        self._id_status.grid(row=1, column=0, sticky="w", padx=8)
         if self._record:
-            code.insert(0, self._record.student_code)
-            code.configure(state="readonly")
+            code.insert(0, self._record.student_id)
+            code.configure(state="readonly")  # mã sinh viên bất biến (UC-10)
+            self._id_status.configure(text="Mã sinh viên không thể thay đổi.")
         else:
             self._field(grid, "Mật khẩu ban đầu *", "password", 0, 1, show="•")
-        self._field(grid, "Họ và tên *", "full_name", 1, 0)
-        self._field(grid, "Lớp *", "class_name", 1, 1)
-        gender = self._field(grid, "Giới tính *", "gender", 2, 0, choices=(
-            ("Male", "Female", "Other")
-        ))
-        self._field(grid, "Ngày sinh * (YYYY-MM-DD)", "date_of_birth", 2, 1)
-        self._field(grid, "Email *", "email", 3, 0)
-        self._field(grid, "Số điện thoại", "phone", 3, 1)
-        self._field(grid, "Năm nhập học *", "enrollment_year", 4, 0)
+            code.bind("<KeyRelease>", self._schedule_id_check)  # UC-19 kiểm tra trùng ngay khi nhập
+            code.bind("<FocusOut>", lambda _e: self._check_id())
+        self._field(grid, "Họ và tên *", "full_name", 2, 0)
+        self._field(grid, "Lớp *", "class_name", 2, 1)
+        gender = self._field(grid, "Giới tính *", "gender", 3, 0, choices=("Nam", "Nữ", "Khác"))
+        self._field(grid, "Ngày sinh * (dd/mm/yyyy)", "date_of_birth", 3, 1)
+        self._field(grid, "Email *", "email", 4, 0)
+        self._field(grid, "Số điện thoại *", "phone", 4, 1)
+        self._field(grid, "Địa chỉ", "address", 5, 0, span=2)
 
         if self._record:
             for key, value in (
                 ("full_name", self._record.full_name),
                 ("class_name", self._record.class_name),
                 ("gender", self._record.gender),
-                ("date_of_birth", self._record.date_of_birth.isoformat()),
+                ("date_of_birth", self._record.date_of_birth.strftime("%d/%m/%Y")),
                 ("email", self._record.email),
-                ("phone", self._record.phone or ""),
-                ("enrollment_year", str(self._record.enrollment_year)),
+                ("phone", self._record.phone),
+                ("address", self._record.address or ""),
             ):
                 field = self._fields[key]
                 if isinstance(field, ttk.Combobox):
@@ -577,9 +604,10 @@ class StudentFormDialog(tk.Toplevel):
         *,
         show: str | None = None,
         choices: tuple[str, ...] | None = None,
+        span: int = 1,
     ):
         cell = tk.Frame(parent, bg=SURFACE)
-        cell.grid(row=row, column=column, sticky="ew", padx=6, pady=6)
+        cell.grid(row=row, column=column, columnspan=span, sticky="ew", padx=6, pady=6)
         tk.Label(
             cell, text=label, bg=SURFACE, fg=TEXT, font=font(8, "bold"), anchor="w"
         ).pack(fill="x", pady=(0, 4))
@@ -594,34 +622,50 @@ class StudentFormDialog(tk.Toplevel):
         return field
 
     def _focus_first_field(self) -> None:
-        field = self._fields.get("student_code") or self._fields.get("full_name")
+        field = self._fields.get("student_id") or self._fields.get("full_name")
         if field is not None and str(field.cget("state")) != "readonly":
             field.focus_set()
+
+    # ---- UC-19: kiểm tra trùng mã sinh viên ngay trong form ------------------
+    def _schedule_id_check(self, _event: tk.Event | None = None) -> None:
+        if self._id_after is not None:
+            self.after_cancel(self._id_after)
+        self._id_after = self.after(350, self._check_id)
+
+    def _check_id(self) -> None:
+        self._id_after = None
+        code = self._fields["student_id"].get().strip()
+        if not code:
+            self._id_status.configure(text="", fg=MUTED)
+            return
+
+        def done(available: bool) -> None:
+            if self._fields["student_id"].get().strip() != code:
+                return  # kết quả cũ, người dùng đã gõ tiếp
+            if available:
+                self._id_status.configure(text="✓ Mã sinh viên có thể sử dụng.", fg="#15803D")
+            else:
+                self._id_status.configure(text="✗ Mã sinh viên hoặc tên đăng nhập đã tồn tại.", fg=DANGER)
+
+        def failed(error: BaseException) -> None:
+            self._id_status.configure(text=StudentManagementView._error_message(error), fg=DANGER)
+
+        run_in_background(self, lambda: self._service.is_student_id_available(self._session, code), done, failed)
 
     def _submit(self) -> None:
         if self._busy:
             return
-        try:
-            raw_date = self._fields["date_of_birth"].get().strip()
-            dob = datetime.strptime(raw_date, "%Y-%m-%d").date()
-            enrollment_year = int(self._fields["enrollment_year"].get().strip())
-        except ValueError:
-            self._feedback.configure(
-                text="Ngày sinh phải theo định dạng YYYY-MM-DD và năm nhập học phải là số nguyên."
-            )
-            return
-
         values = {
             "full_name": self._fields["full_name"].get(),
             "gender": self._fields["gender"].get(),
-            "date_of_birth": dob,
+            "date_of_birth": self._fields["date_of_birth"].get(),
             "email": self._fields["email"].get(),
             "phone": self._fields["phone"].get(),
+            "address": self._fields["address"].get(),
             "class_name": self._fields["class_name"].get(),
-            "enrollment_year": enrollment_year,
         }
         if self._record is None:
-            values["student_code"] = self._fields["student_code"].get()
+            values["student_id"] = self._fields["student_id"].get()
             values["password"] = self._fields["password"].get()
             operation = lambda: self._service.create(self._session, **values)
         else:
@@ -666,7 +710,7 @@ class StudentDetailDialog(tk.Toplevel):
         ).pack(anchor="w")
         tk.Label(
             body,
-            text=f"{record.student_code}  ·  {record.full_name}",
+            text=f"{record.student_id}  ·  {record.full_name}",
             bg=BACKGROUND,
             fg=MUTED,
             font=font(9),
@@ -675,15 +719,15 @@ class StudentDetailDialog(tk.Toplevel):
         card = tk.Frame(body, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
         card.pack(fill="both", expand=True)
         profile = (
-            ("Mã sinh viên", record.student_code),
+            ("Mã sinh viên", record.student_id),
             ("Họ và tên", record.full_name),
             ("Lớp", record.class_name),
             ("Ngày sinh", record.date_of_birth.strftime("%d/%m/%Y")),
             ("Giới tính", record.gender),
             ("Email", record.email),
-            ("Số điện thoại", record.phone or "Chưa cập nhật"),
-            ("Năm nhập học", str(record.enrollment_year)),
-            ("Tài khoản liên kết", str(record.account_id)),
+            ("Số điện thoại", record.phone),
+            ("Địa chỉ", record.address or "Chưa cập nhật"),
+            ("Tên đăng nhập", record.student_id),
         )
         for index, (label, value) in enumerate(profile):
             row = tk.Frame(card, bg=SURFACE)
@@ -695,4 +739,4 @@ class StudentDetailDialog(tk.Toplevel):
                 row, text=value, bg=SURFACE, fg=TEXT, font=font(9, "bold"), anchor="w"
             ).pack(fill="x", pady=(2, 0))
         secondary_button(body, "Đóng", self.destroy).pack(anchor="e", pady=(14, 0))
-        self.geometry("520x590")
+        self.geometry("520x620")
