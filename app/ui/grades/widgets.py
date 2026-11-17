@@ -21,7 +21,7 @@ from app.ui.theme import (
 _STATUS_LABELS = {
     "PASSED": "Đạt",
     "FAILED": "Không đạt",
-    "PENDING": "Chưa đủ điểm",
+    "PENDING": "Chưa có điểm",
 }
 
 
@@ -130,6 +130,16 @@ def stat_card(parent: tk.Misc, label: str) -> tuple[tk.Frame, tk.Label]:
     return card, value
 
 
+PASS_THRESHOLD = 5
+
+
+def status_of(score) -> str:
+    """Một điểm duy nhất: chưa có → PENDING, từ 5.0 trở lên → PASSED, ngược lại FAILED."""
+    if score is None:
+        return "PENDING"
+    return "PASSED" if score >= PASS_THRESHOLD else "FAILED"
+
+
 def format_score(value) -> str:
     return "—" if value is None else f"{value:.2f}"
 
@@ -145,7 +155,7 @@ def status_chip_label(status: str | None) -> str:
     if not status:
         return "Chưa có điểm"
     mapping = {
-        "PASSED": "Đã có điểm",
+        "PASSED": "Đạt",
         "FAILED": "Không đạt",
         "PENDING": "Chưa có điểm",
     }

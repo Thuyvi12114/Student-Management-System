@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import tkinter as tk
-from datetime import datetime
 from tkinter import messagebox, ttk
 
 from app.dao.errors import DataAccessError
@@ -152,7 +151,6 @@ class LecturerManagementView(tk.Frame):
             "department",
             "email",
             "phone",
-            "degree",
             "actions",
         )
         self._tree = ttk.Treeview(
@@ -167,9 +165,8 @@ class LecturerManagementView(tk.Frame):
             ("lecturer_code", "Mã giảng viên", 115, "w"),
             ("full_name", "Họ và tên", 170, "w"),
             ("department", "Khoa/bộ môn", 175, "w"),
-            ("email", "Email", 195, "w"),
-            ("phone", "Số điện thoại", 110, "w"),
-            ("degree", "Học vị", 85, "center"),
+            ("email", "Email", 225, "w"),
+            ("phone", "Số điện thoại", 120, "w"),
             ("actions", "Thao tác", 145, "center"),
         )
         for key, label, width, anchor in specs:
@@ -319,8 +316,7 @@ class LecturerManagementView(tk.Frame):
                         lecturer.full_name,
                         lecturer.department,
                         lecturer.email,
-                        lecturer.phone or "—",
-                        lecturer.degree,
+                        lecturer.phone,
                         "Xem  |  Sửa  |  Xóa",
                     ),
                     tags=("odd",) if index % 2 else (),
@@ -363,16 +359,16 @@ class LecturerManagementView(tk.Frame):
         action_index = min(2, max(0, relative_x * 3 // max(bounds[2], 1)))
         self._tree.selection_set(item)
         self._tree.focus(item)
-        self.after_idle(lambda: self._run_row_action(int(item), int(action_index)))
+        self.after_idle(lambda: self._run_row_action(str(item), int(action_index)))
         return "break"
 
     def _on_double_click(self, event: tk.Event) -> None:
         if self._tree.identify_column(event.x) != "#7":
             item = self._tree.identify_row(event.y)
             if item:
-                self._show_detail(int(item))
+                self._show_detail(str(item))
 
-    def _run_row_action(self, lecturer_id: int, action_index: int) -> None:
+    def _run_row_action(self, lecturer_id: str, action_index: int) -> None:
         if action_index == 0:
             self._show_detail(lecturer_id)
         elif action_index == 1:
@@ -380,7 +376,7 @@ class LecturerManagementView(tk.Frame):
         else:
             self._delete_lecturer(lecturer_id)
 
-    def _show_detail(self, lecturer_id: int) -> None:
+    def _show_detail(self, lecturer_id: str) -> None:
         run_in_background(
             self,
             lambda: self._service.get_by_id(self._session, lecturer_id),
@@ -397,7 +393,7 @@ class LecturerManagementView(tk.Frame):
                 on_saved=lambda _record: self._refresh_after_save(),
             )
 
-    def _open_edit(self, lecturer_id: int) -> None:
+    def _open_edit(self, lecturer_id: str) -> None:
         run_in_background(
             self,
             lambda: self._service.get_by_id(self._session, lecturer_id),
@@ -411,9 +407,9 @@ class LecturerManagementView(tk.Frame):
             lambda error: self._feedback.configure(text=self._error_message(error)),
         )
 
-    def _delete_lecturer(self, lecturer_id: int) -> None:
+    def _delete_lecturer(self, lecturer_id: str) -> None:
         values = self._tree.item(str(lecturer_id), "values")
-        name = values[1] if values else f"ID {lecturer_id}"
+        name = values[1] if values else lecturer_id
         if not messagebox.askyesno(
             "Xác nhận xóa giảng viên",
             f"Xóa hồ sơ {name} và tài khoản liên kết?\n"
@@ -484,7 +480,7 @@ class LecturerFormDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.grab_set()
         self._build()
-        self.geometry("660x650")
+        self.geometry("660x500")
 
     def _build(self) -> None:
         body = tk.Frame(self, bg=BACKGROUND)
@@ -498,7 +494,7 @@ class LecturerFormDialog(tk.Toplevel):
         ).pack(anchor="w")
         tk.Label(
             body,
-            text="Thông tin hồ sơ và tài khoản được lưu an toàn vào MySQL.",
+            text="Tạo giảng viên sẽ tạo luôn tài khoản Giảng viên (tên đăng nhập = mã giảng viên) trong cùng một giao dịch.",
             bg=BACKGROUND,
             fg=MUTED,
             font=font(8),
@@ -511,36 +507,21 @@ class LecturerFormDialog(tk.Toplevel):
         grid.grid_columnconfigure(0, weight=1)
         grid.grid_columnconfigure(1, weight=1)
 
-        row = 0
+        self._field(grid, "Mã giảng viên * (cũng là tên đăng nhập)", "lecturer_id", 0, 0)
         if self._record is None:
-            self._field(grid, "Tên đăng nhập *", "username", row, 0)
-            self._field(grid, "Mật khẩu ban đầu *", "password", row, 1, show="•")
-            row += 1
-        self._field(grid, "Mã giảng viên *", "lecturer_code", row, 0)
-        self._field(grid, "Họ và tên *", "full_name", row, 1)
-        self._field(grid, "Giới tính *", "gender", row + 1, 0, choices=(
-            "Male", "Female", "Other"
-        ))
-        self._field(
-            grid, "Ngày sinh * (YYYY-MM-DD)", "date_of_birth", row + 1, 1
-        )
-        self._field(grid, "Email *", "email", row + 2, 0)
-        self._field(grid, "Số điện thoại", "phone", row + 2, 1)
-        self._field(grid, "Khoa/bộ môn *", "department", row + 3, 0)
-        self._field(
-            grid, "Học vị *", "degree", row + 3, 1,
-            choices=("Bachelor", "Master", "Doctor"),
-        )
+            self._field(grid, "Mật khẩu ban đầu *", "password", 0, 1, show="•")
+        self._field(grid, "Họ và tên *", "full_name", 1, 0)
+        self._field(grid, "Khoa/bộ môn *", "department", 1, 1)
+        self._field(grid, "Email *", "email", 2, 0)
+        self._field(grid, "Số điện thoại *", "phone", 2, 1)
         if self._record:
+            self._fields["lecturer_id"].insert(0, self._record.lecturer_id)
+            self._fields["lecturer_id"].configure(state="readonly")  # mã giảng viên bất biến
             for key, value in (
-                ("lecturer_code", self._record.lecturer_code),
                 ("full_name", self._record.full_name),
-                ("gender", self._record.gender),
-                ("date_of_birth", self._record.date_of_birth.isoformat()),
                 ("email", self._record.email),
-                ("phone", self._record.phone or ""),
+                ("phone", self._record.phone),
                 ("department", self._record.department),
-                ("degree", self._record.degree),
             ):
                 field = self._fields[key]
                 if isinstance(field, ttk.Combobox):
@@ -591,26 +572,14 @@ class LecturerFormDialog(tk.Toplevel):
     def _submit(self) -> None:
         if self._busy:
             return
-        try:
-            dob = datetime.strptime(
-                self._fields["date_of_birth"].get().strip(), "%Y-%m-%d"
-            ).date()
-        except ValueError:
-            self._feedback.configure(text="Ngày sinh phải theo định dạng YYYY-MM-DD.")
-            return
-
         values = {
-            "lecturer_code": self._fields["lecturer_code"].get(),
             "full_name": self._fields["full_name"].get(),
-            "gender": self._fields["gender"].get(),
-            "date_of_birth": dob,
             "email": self._fields["email"].get(),
             "phone": self._fields["phone"].get(),
             "department": self._fields["department"].get(),
-            "degree": self._fields["degree"].get(),
         }
         if self._record is None:
-            values["username"] = self._fields["username"].get()
+            values["lecturer_id"] = self._fields["lecturer_id"].get()
             values["password"] = self._fields["password"].get()
             operation = lambda: self._service.create(self._session, **values)
         else:
@@ -659,15 +628,12 @@ class LecturerDetailDialog(tk.Toplevel):
         card = tk.Frame(body, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
         card.pack(fill="both", expand=True)
         fields = (
-            ("Mã giảng viên", record.lecturer_code),
+            ("Mã giảng viên", record.lecturer_id),
             ("Họ và tên", record.full_name),
             ("Khoa/bộ môn", record.department),
-            ("Học vị", record.degree),
-            ("Ngày sinh", record.date_of_birth.strftime("%d/%m/%Y")),
-            ("Giới tính", record.gender),
             ("Email", record.email),
-            ("Số điện thoại", record.phone or "Chưa cập nhật"),
-            ("Tài khoản liên kết", str(record.account_id)),
+            ("Số điện thoại", record.phone),
+            ("Tên đăng nhập", record.lecturer_id),
         )
         for index, (label, value) in enumerate(fields):
             row = tk.Frame(card, bg=SURFACE)
@@ -679,4 +645,4 @@ class LecturerDetailDialog(tk.Toplevel):
                 row, text=value, bg=SURFACE, fg=TEXT, font=font(9, "bold"), anchor="w"
             ).pack(fill="x", pady=(2, 0))
         secondary_button(body, "Đóng", self.destroy).pack(anchor="e", pady=(14, 0))
-        self.geometry("520x590")
+        self.geometry("520x470")

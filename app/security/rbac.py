@@ -17,23 +17,28 @@ class AppModule(Enum):
     )
     ACCOUNT_MANAGEMENT = (
         "Tài khoản & phân quyền",
-        "Tạo, khóa/mở khóa tài khoản và gán vai trò Admin, Giảng viên, Sinh viên.",
+        "Xem tài khoản sinh viên/giảng viên, khóa hoặc mở khóa và đặt lại mật khẩu.",
         frozenset({Role.ADMIN}),
     )
     STUDENT_MANAGEMENT = (
         "Quản lý sinh viên",
-        "Hồ sơ sinh viên, lớp học, thông tin liên hệ gắn với tài khoản đăng nhập.",
+        "Thêm, sửa, xóa hồ sơ sinh viên; tài khoản đăng nhập được tạo/xóa cùng hồ sơ.",
         frozenset({Role.ADMIN}),
     )
     LECTURER_MANAGEMENT = (
         "Quản lý giảng viên",
-        "Hồ sơ giảng viên, khoa/bộ môn và phân công giảng dạy.",
+        "Hồ sơ giảng viên, khoa/bộ môn; tài khoản được tạo/xóa cùng hồ sơ.",
         frozenset({Role.ADMIN}),
     )
     COURSE_MANAGEMENT = (
-        "Quản lý môn học",
-        "Danh mục môn học, số tín chỉ, học kỳ, năm học và giảng viên phụ trách.",
-        frozenset({Role.ADMIN, Role.LECTURER}),
+        "Học phần",
+        "Admin quản lý danh mục; giảng viên xem học phần được phân công; sinh viên xem danh mục.",
+        frozenset({Role.ADMIN, Role.LECTURER, Role.STUDENT}),
+    )
+    LECTURER_STUDENT_SEARCH = (
+        "Tra cứu sinh viên",
+        "Tìm sinh viên theo mã, họ tên, lớp; chỉ hiển thị mã sinh viên, họ tên và lớp.",
+        frozenset({Role.LECTURER}),
     )
     ADMIN_GRADE_LOOKUP = (
         "Tra cứu điểm",
@@ -42,7 +47,7 @@ class AppModule(Enum):
     )
     GRADE_MANAGEMENT = (
         "Nhập & cập nhật điểm",
-        "Nhập điểm quá trình, điểm cuối kỳ và cập nhật điểm cho sinh viên.",
+        "Nhập và cập nhật điểm cho sinh viên thuộc học phần được phân công.",
         frozenset({Role.LECTURER}),
     )
     LECTURER_COURSE_GRADES = (
@@ -56,9 +61,9 @@ class AppModule(Enum):
         frozenset({Role.STUDENT}),
     )
     PROFILE = (
-        "Thông tin cá nhân",
-        "Xem thông tin tài khoản đang đăng nhập và đổi mật khẩu.",
-        frozenset({Role.ADMIN, Role.LECTURER, Role.STUDENT}),
+        "Hồ sơ cá nhân",
+        "Xem hồ sơ của mình; sinh viên cập nhật email, số điện thoại, địa chỉ; đổi mật khẩu.",
+        frozenset({Role.LECTURER, Role.STUDENT}),
     )
 
     def __init__(self, label: str, description: str, allowed_roles: frozenset[Role]) -> None:

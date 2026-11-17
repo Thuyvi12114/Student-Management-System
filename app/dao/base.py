@@ -1,122 +1,104 @@
-"""BaseDAO — lớp cơ sở dùng chung cho các DAO (Module accounts-student, Nghĩa)."""
+"""Tiện ích dùng chung cho DAO: mở kết nối, chạy truy vấn có tham số, dịch lỗi MySQL."""
 
 from __future__ import annotations
 
 import contextlib
-from contextlib import contextmanager
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import mysql.connector
+from mysql.connector import errorcode
 
 from app.dao.errors import DataAccessError, DuplicateRecordError
 from app.db import Database
 
 
+def like_pattern(keyword: str) -> str:
+    """Mẫu LIKE khớp một phần; escape % _ \\ để người dùng không phá truy vấn."""
+    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def translate(exc: mysql.connector.Error, action: str) -> DataAccessError:
+    code = getattr(exc, "errno", None)
+    if code == errorcode.ER_DUP_ENTRY:
+        return DuplicateRecordError("Dữ liệu bị trùng với bản ghi đã có.")
+    if code in (errorcode.ER_ROW_IS_REFERENCED, errorcode.ER_ROW_IS_REFERENCED_2):
+        return DataAccessError("Không thể xóa vì còn dữ liệu liên quan đang tham chiếu.")
+    if code in (errorcode.ER_NO_REFERENCED_ROW, errorcode.ER_NO_REFERENCED_ROW_2):
+        return DataAccessError("Dữ liệu tham chiếu không tồn tại.")
+    return DataAccessError(f"Không thể {action}: {exc}")
+
+
 class BaseDAO:
-    """Cung cấp các helper query/execute/transaction để các DAO con kế thừa."""
-
     def __init__(self, database: Database) -> None:
-        self._db = database
+        self._database = database
 
-    # ------------------------------------------------------------------ read
-
-    def one(self, sql: str, params: tuple = (), *, action: str = "truy vấn", conn=None) -> tuple | None:
+    def query(self, sql: str, params: Sequence[Any] = (), *, action: str = "đọc dữ liệu", conn=None) -> list[tuple]:
         try:
             if conn is not None:
-                cur = conn.cursor(prepared=True)
+                cursor = conn.cursor()
                 try:
-                    cur.execute(sql, params)
-                    return cur.fetchone()
+                    cursor.execute(sql, tuple(params))
+                    return cursor.fetchall()
                 finally:
-                    cur.close()
-            with contextlib.closing(self._db.connect()) as c:
-                cur = c.cursor(prepared=True)
+                    cursor.close()
+            with contextlib.closing(self._database.connect()) as connection:
+                cursor = connection.cursor()
                 try:
-                    cur.execute(sql, params)
-                    return cur.fetchone()
+                    cursor.execute(sql, tuple(params))
+                    return cursor.fetchall()
                 finally:
-                    cur.close()
+                    cursor.close()
         except mysql.connector.Error as exc:
-            raise DataAccessError(f"Không {action} được: {exc}") from exc
+            raise translate(exc, action) from exc
 
-    def query(self, sql: str, params: tuple = (), *, action: str = "truy vấn", conn=None) -> list[tuple]:
-        try:
-            if conn is not None:
-                cur = conn.cursor(prepared=True)
-                try:
-                    cur.execute(sql, params)
-                    return cur.fetchall()
-                finally:
-                    cur.close()
-            with contextlib.closing(self._db.connect()) as c:
-                cur = c.cursor(prepared=True)
-                try:
-                    cur.execute(sql, params)
-                    return cur.fetchall()
-                finally:
-                    cur.close()
-        except mysql.connector.Error as exc:
-            raise DataAccessError(f"Không {action} được: {exc}") from exc
+    def one(self, sql: str, params: Sequence[Any] = (), *, action: str = "đọc dữ liệu", conn=None) -> tuple | None:
+        rows = self.query(sql, params, action=action, conn=conn)
+        return rows[0] if rows else None
 
-    def scalar(self, sql: str, params: tuple = (), *, action: str = "truy vấn", conn=None) -> Any:
+    def scalar(self, sql: str, params: Sequence[Any] = (), *, action: str = "đọc dữ liệu", conn=None) -> Any:
         row = self.one(sql, params, action=action, conn=conn)
         return row[0] if row else None
 
-    # ------------------------------------------------------------------ write
-
-    def execute(self, sql: str, params: tuple = (), *, action: str = "thực thi", conn=None) -> tuple[int, int]:
+    def execute(self, sql: str, params: Sequence[Any] = (), *, action: str = "ghi dữ liệu", conn=None) -> tuple[int, int]:
         """Trả về (rowcount, lastrowid)."""
         try:
             if conn is not None:
-                cur = conn.cursor(prepared=True)
+                cursor = conn.cursor()
                 try:
-                    cur.execute(sql, params)
-                    return cur.rowcount, (cur.lastrowid or 0)
+                    cursor.execute(sql, tuple(params))
+                    return cursor.rowcount, cursor.lastrowid or 0
                 finally:
-                    cur.close()
-            with contextlib.closing(self._db.connect()) as c:
-                cur = c.cursor(prepared=True)
+                    cursor.close()
+            with contextlib.closing(self._database.connect()) as connection:
+                cursor = connection.cursor()
                 try:
-                    cur.execute(sql, params)
-                    rowcount = cur.rowcount
-                    lastrowid = cur.lastrowid or 0
+                    cursor.execute(sql, tuple(params))
+                    return cursor.rowcount, cursor.lastrowid or 0
                 finally:
-                    cur.close()
-                c.commit()
-            return rowcount, lastrowid
-        except mysql.connector.IntegrityError as exc:
-            if exc.errno == 1062:
-                raise DuplicateRecordError(f"Dữ liệu trùng khi {action}.") from exc
-            raise DataAccessError(f"Không {action} được: {exc}") from exc
+                    cursor.close()
         except mysql.connector.Error as exc:
-            raise DataAccessError(f"Không {action} được: {exc}") from exc
+            raise translate(exc, action) from exc
 
-    # ------------------------------------------------------------------ transaction
-
-    @contextmanager
-    def transaction(self, label: str = "giao dịch"):
-        """Context manager mở một kết nối autocommit=False, commit khi thoát hoặc rollback khi lỗi."""
+    @contextlib.contextmanager
+    def transaction(self, action: str = "ghi dữ liệu") -> Iterator[Any]:
+        """Giao dịch: commit khi thành công, rollback toàn bộ khi có lỗi (UC-09 AF4, UC-11 AF4)."""
         try:
-            conn = self._db.connect()
-            conn.autocommit = False
-        except mysql.connector.Error as exc:
-            raise DataAccessError(f"Không mở kết nối cho {label}: {exc}") from exc
-        try:
-            yield conn
-            conn.commit()
-        except (DataAccessError, DuplicateRecordError):
-            conn.rollback()
+            connection = self._database.connect()
+        except DataAccessError:
             raise
-        except mysql.connector.IntegrityError as exc:
-            conn.rollback()
-            if exc.errno == 1062:
-                raise DuplicateRecordError(f"Dữ liệu trùng trong {label}.") from exc
-            raise DataAccessError(f"Lỗi toàn vẹn dữ liệu trong {label}: {exc}") from exc
+        try:
+            connection.start_transaction()
+            yield connection
+            connection.commit()
         except mysql.connector.Error as exc:
-            conn.rollback()
-            raise DataAccessError(f"Lỗi MySQL trong {label}: {exc}") from exc
-        except Exception:
-            conn.rollback()
+            with contextlib.suppress(mysql.connector.Error):
+                connection.rollback()
+            raise translate(exc, action) from exc
+        except BaseException:
+            with contextlib.suppress(mysql.connector.Error):
+                connection.rollback()
             raise
         finally:
-            conn.close()
+            connection.close()

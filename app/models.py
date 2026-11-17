@@ -1,74 +1,77 @@
-"""Thực thể ánh xạ các bảng trong cơ sở dữ liệu."""
+"""Thực thể ánh xạ 5 bảng của tài liệu thiết kế: UserAccounts, Students, Lecturers, Courses, Grades."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 
+GENDERS = ("Nam", "Nữ", "Khác")
+PASS_THRESHOLD = Decimal("5.00")
+
 
 class Role(str, Enum):
-    """Ba vai trò, khớp ràng buộc CHECK của UserAccounts.Role."""
+    """Ba vai trò; giá trị khớp ENUM của UserAccounts.role."""
 
-    ADMIN = "ADMIN"
-    LECTURER = "LECTURER"
-    STUDENT = "STUDENT"
+    ADMIN = "Administrator"
+    LECTURER = "Lecturer"
+    STUDENT = "Student"
 
     @property
     def label(self) -> str:
         return {
-            self.ADMIN: "Quản trị viên",
-            self.LECTURER: "Giảng viên",
-            self.STUDENT: "Sinh viên",
+            Role.ADMIN: "Quản trị viên",
+            Role.LECTURER: "Giảng viên",
+            Role.STUDENT: "Sinh viên",
         }[self]
 
     @property
     def description(self) -> str:
         return {
-            self.ADMIN: "Toàn quyền quản lý tài khoản, sinh viên, giảng viên, môn học và điểm.",
-            self.LECTURER: "Quản lý môn học được phân công và nhập điểm cho sinh viên.",
-            self.STUDENT: "Xem thông tin cá nhân, môn học và kết quả học tập của mình.",
+            Role.ADMIN: "Quản lý sinh viên, giảng viên, học phần, tài khoản và xem điểm.",
+            Role.LECTURER: "Xem học phần được phân công và nhập điểm cho sinh viên.",
+            Role.STUDENT: "Xem hồ sơ, cập nhật liên hệ và xem kết quả học tập của mình.",
         }[self]
 
     @classmethod
     def from_db(cls, value: str | None) -> "Role":
-        try:
-            return cls(str(value).upper())
-        except (ValueError, AttributeError) as exc:
-            raise ValueError(f"Vai trò không hợp lệ: {value}") from exc
+        text = str(value or "").strip().lower()
+        for role in cls:
+            if role.value.lower() == text:
+                return role
+        raise ValueError(f"Vai trò không hợp lệ: {value}")
 
 
 class AccountStatus(str, Enum):
-    """Trạng thái tài khoản, khớp ràng buộc CHECK của UserAccounts.Status."""
+    """Trạng thái tài khoản; giá trị khớp ENUM của UserAccounts.status."""
 
-    ACTIVE = "ACTIVE"
-    INACTIVE = "INACTIVE"
+    ACTIVE = "Active"
+    INACTIVE = "Inactive"
 
     @property
     def label(self) -> str:
-        return "Active" if self is AccountStatus.ACTIVE else "Inactive"
+        return "Đang hoạt động" if self is AccountStatus.ACTIVE else "Đã khóa"
 
     @classmethod
     def from_db(cls, value: str | None) -> "AccountStatus":
-        try:
-            return cls(str(value).upper())
-        except (ValueError, AttributeError) as exc:
-            raise ValueError(f"Trạng thái tài khoản không hợp lệ: {value}") from exc
+        text = str(value or "").strip().lower()
+        for status in cls:
+            if status.value.lower() == text:
+                return status
+        raise ValueError(f"Trạng thái tài khoản không hợp lệ: {value}")
 
 
 @dataclass(frozen=True)
 class UserAccount:
-    """Bản ghi bảng UserAccounts."""
+    """Bản ghi UserAccounts; full_name lấy từ hồ sơ Students/Lecturers để hiển thị."""
 
     account_id: int
     username: str
     password_hash: str
-    full_name: str
     role: Role
     status: AccountStatus
-    last_login_at: datetime | None
-    created_at: datetime | None
+    full_name: str = ""
 
     @property
     def is_active(self) -> bool:
@@ -77,7 +80,7 @@ class UserAccount:
 
 @dataclass(frozen=True)
 class AccountSummary:
-    """Account fields safe for the Admin account list; excludes password data."""
+    """Dòng danh sách tài khoản cho Admin (không có mật khẩu)."""
 
     account_id: int
     username: str
@@ -87,88 +90,43 @@ class AccountSummary:
 
 
 @dataclass(frozen=True)
-class Student:
-    student_id: int
+class StudentRecord:
+    """Hồ sơ sinh viên (bảng Students). student_id là mã sinh viên và cũng là username."""
+
+    student_id: str
     account_id: int
-    student_code: str
     full_name: str
-    gender: str
     date_of_birth: date
+    gender: str
     email: str
-    phone: str | None
+    phone: str
+    address: str | None
     class_name: str
-    enrollment_year: int
+
+    @property
+    def student_code(self) -> str:
+        return self.student_id
 
 
-@dataclass(frozen=True)
-class Lecturer:
-    lecturer_id: int
-    account_id: int
-    lecturer_code: str
-    full_name: str
-    gender: str
-    date_of_birth: date
-    email: str
-    phone: str | None
-    department: str
-    degree: str
-
-
-@dataclass(frozen=True)
-class LecturerSearchResult:
-    items: list[Lecturer]
-    total_count: int
-    page: int
-    page_size: int
-    total_pages: int
-
-
-@dataclass(frozen=True)
-class Course:
-    course_id: int
-    course_code: str
-    course_name: str
-    credits: int
-    lecturer_id: int | None
-    semester: str
-    academic_year: str
-
-
-@dataclass(frozen=True)
-class Grade:
-    grade_id: int
-    student_id: int
-    course_id: int
-    process_score: Decimal | None
-    final_score: Decimal | None
-    status: str
-
-
-def course_average(process_score: Decimal | None, final_score: Decimal | None) -> Decimal | None:
-    """Điểm trung bình học phần: 40% quá trình + 60% cuối kỳ."""
-    if process_score is None or final_score is None:
-        return None
-    return (process_score * Decimal("0.4") + final_score * Decimal("0.6")).quantize(
-        Decimal("0.01"),
-        rounding=ROUND_HALF_UP,
-    )
+Student = StudentRecord
 
 
 @dataclass(frozen=True)
 class StudentOption:
-    """Sinh viên dùng cho bộ lọc và bảng điểm."""
+    """Sinh viên rút gọn dùng cho bộ lọc và bảng điểm."""
 
-    student_id: int
-    student_code: str
+    student_id: str
     full_name: str
     class_name: str
+
+    @property
+    def student_code(self) -> str:
+        return self.student_id
 
 
 @dataclass(frozen=True)
 class StudentSearchResult:
-    """Kết quả tìm kiếm sinh viên có hỗ trợ phân trang phía server."""
-
-    items: list["StudentRecord"]
+    items: list[StudentRecord]
     total_count: int
     page: int
     page_size: int
@@ -177,9 +135,9 @@ class StudentSearchResult:
 
 @dataclass(frozen=True)
 class LecturerStudent:
-    """Thông tin sinh viên được phép hiển thị cho giảng viên."""
+    """UC-01: giảng viên chỉ được thấy mã sinh viên, họ tên và lớp."""
 
-    student_id: int
+    student_id: str
     full_name: str
     class_name: str
 
@@ -194,47 +152,51 @@ class LecturerStudentSearchResult:
 
 
 @dataclass(frozen=True)
-class StudentRecord:
-    """Thông tin sinh viên đầy đủ — dùng cho cả module cũ và module accounts-student."""
+class Lecturer:
+    """Hồ sơ giảng viên (bảng Lecturers). lecturer_id là mã giảng viên và cũng là username."""
 
-    student_id: str          # mã sinh viên dạng chuỗi, VD "SV2024001"
+    lecturer_id: str
     account_id: int
     full_name: str
-    date_of_birth: date
-    gender: str
     email: str
-    phone: str | None
-    address: str | None = None
-    class_name: str = ""
+    phone: str
+    department: str
+
+    @property
+    def lecturer_code(self) -> str:
+        return self.lecturer_id
 
 
 @dataclass(frozen=True)
-class DashboardStats:
-    """Thống kê nhanh cho dashboard."""
-
-    total_students: int = 0
-    total_lecturers: int = 0
-    total_courses: int = 0
-    total_classes: int = 0
-    assigned_courses: int = 0
+class LecturerSearchResult:
+    items: list[Lecturer]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 @dataclass(frozen=True)
 class CourseOption:
-    """Học phần kèm giảng viên phụ trách."""
+    """Học phần kèm tên giảng viên phụ trách."""
 
-    course_id: int
-    course_code: str
+    course_id: str
     course_name: str
     credits: int
-    semester: str
-    academic_year: str
-    lecturer_id: int | None
-    lecturer_name: str | None
+    lecturer_id: str
+    lecturer_name: str
+    description: str | None = None
+
+    @property
+    def course_code(self) -> str:
+        return self.course_id
 
     @property
     def label(self) -> str:
-        return f"{self.course_code} - {self.course_name} ({self.credits} TC, {self.semester} {self.academic_year})"
+        return f"{self.course_id} - {self.course_name} ({self.credits} TC)"
+
+
+Course = CourseOption
 
 
 @dataclass(frozen=True)
@@ -248,40 +210,62 @@ class CourseSearchResult:
 
 @dataclass(frozen=True)
 class GradeEntry:
-    """Một dòng điểm đã nhập, kèm thông tin sinh viên và học phần."""
+    """Một điểm đã nhập, kèm thông tin sinh viên và học phần."""
 
     grade_id: int
-    student_id: int
-    student_code: str
+    student_id: str
     student_name: str
-    course_id: int
-    course_code: str
+    course_id: str
     course_name: str
     credits: int
-    semester: str
-    academic_year: str
-    process_score: Decimal | None
-    final_score: Decimal | None
-    status: str
+    grade_value: Decimal
 
     @property
-    def average_score(self) -> Decimal | None:
-        return course_average(self.process_score, self.final_score)
+    def student_code(self) -> str:
+        return self.student_id
+
+    @property
+    def course_code(self) -> str:
+        return self.course_id
+
+    @property
+    def passed(self) -> bool:
+        return self.grade_value >= PASS_THRESHOLD
+
+
+Grade = GradeEntry
 
 
 @dataclass(frozen=True)
 class CourseGradeRow:
-    """Sinh viên trong danh sách học phần; grade_id null nếu chưa nhập điểm."""
+    """Sinh viên trong bảng điểm của một học phần; grade_id/grade_value là None nếu chưa có điểm."""
 
-    student_id: int
-    student_code: str
+    student_id: str
     student_name: str
     class_name: str
     grade_id: int | None
-    process_score: Decimal | None
-    final_score: Decimal | None
-    status: str | None
+    grade_value: Decimal | None
 
     @property
-    def average_score(self) -> Decimal | None:
-        return course_average(self.process_score, self.final_score)
+    def student_code(self) -> str:
+        return self.student_id
+
+
+@dataclass(frozen=True)
+class DashboardStats:
+    total_students: int = 0
+    total_lecturers: int = 0
+    total_courses: int = 0
+    total_classes: int = 0
+    assigned_courses: int = 0
+    graded_entries: int = 0     # số điểm đã nhập trong các học phần của giảng viên
+    expected_entries: int = 0   # số học phần × số sinh viên
+
+
+def weighted_gpa(entries: list[GradeEntry]) -> Decimal | None:
+    """GPA = Σ(điểm × tín chỉ) / Σ tín chỉ (thang 10), làm tròn 2 chữ số."""
+    credits = sum(entry.credits for entry in entries)
+    if credits == 0:
+        return None
+    total = sum(entry.grade_value * entry.credits for entry in entries)
+    return (total / credits).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

@@ -9,7 +9,13 @@ from app.dao.errors import DataAccessError
 from app.security.session import Session
 from app.service.exceptions import ServiceError
 from app.service.grade_service import GradeService
-from app.ui.grades.widgets import configure_table_style, format_score, row_tag, status_label
+from app.ui.grades.widgets import (
+    configure_table_style,
+    format_score,
+    row_tag,
+    status_label,
+    status_of,
+)
 from app.ui.theme import (
     BACKGROUND,
     BORDER,
@@ -350,9 +356,9 @@ class AdminGradesView(tk.Frame):
             ):
                 continue
             # Status filter
-            if status_filter == "Đã có điểm" and g.final_score is None:
+            if status_filter == "Đã có điểm" and g.grade_value is None:
                 continue
-            if status_filter == "Chưa có điểm" and g.final_score is not None:
+            if status_filter == "Chưa có điểm" and g.grade_value is not None:
                 continue
             filtered.append(g)
 
@@ -372,7 +378,7 @@ class AdminGradesView(tk.Frame):
         chunk  = self._all_rows[start * _PAGE_SIZE: end]
 
         # Pending count for summary
-        pending_count = sum(1 for g in self._all_rows if g.final_score is None)
+        pending_count = sum(1 for g in self._all_rows if g.grade_value is None)
         self._summary_label.configure(
             text=f"{total} lượt ghi danh  ·  {pending_count} chưa có điểm"
         )
@@ -381,8 +387,8 @@ class AdminGradesView(tk.Frame):
             grade_id_str = f"GD{grade.grade_id:06d}"
             sv_str = f"{grade.student_code} · {grade.student_name}"
             hp_str = f"{grade.course_code} · {grade.course_name}"
-            score  = format_score(grade.final_score)
-            tag    = row_tag(grade.status)
+            score  = format_score(grade.grade_value)
+            tag    = row_tag(status_of(grade.grade_value))
 
             self.tree.insert(
                 "", "end",
@@ -440,8 +446,8 @@ class AdminGradesView(tk.Frame):
             text=f"GD{grade.grade_id:06d}  ·  {grade.student_name}  ·  "
                  f"{grade.course_code} — {grade.course_name}"
         )
-        if grade.final_score is not None:
-            self._detail_score.configure(text=format_score(grade.final_score), fg="#0F172A")
+        if grade.grade_value is not None:
+            self._detail_score.configure(text=format_score(grade.grade_value), fg="#0F172A")
         else:
             self._detail_score.configure(text="Chưa có điểm", fg=MUTED)
 

@@ -27,9 +27,11 @@ def main() -> None:
             context.auth_service,
             context.grade_service,
             context.student_service,
+            context.student_search_service,
             context.lecturer_service,
             context.account_service,
             context.course_service,
+            context.profile_service,
             login.session,
         )
         workspace.mainloop()

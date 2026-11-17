@@ -13,6 +13,8 @@ from app.service.account_service import AccountService
 from app.service.course_service import CourseService
 from app.service.grade_service import GradeService
 from app.service.lecturer_service import LecturerService
+from app.service.profile_service import ProfileService
+from app.service.student_search_service import StudentSearchService
 from app.service.student_service import StudentService
 from app.ui.change_password_dialog import ChangePasswordDialog
 from app.ui.accounts import AccountManagementView
@@ -23,9 +25,11 @@ from app.ui.grades import (
     LecturerCoursesView,
     StudentResultsView,
 )
+from app.ui.dashboard import DashboardView
+from app.ui.profile import ProfileView
+from app.ui.search import LecturerStudentSearchView
 from app.ui.students import StudentManagementView
 from app.ui.lecturers import LecturerManagementView
-from app.ui.management.widgets import create_stat_card, run_in_background
 from app.ui.theme import (
     BACKGROUND,
     BORDER,
@@ -51,6 +55,7 @@ _NAV_ICONS: dict[AppModule, str] = {
     AppModule.ADMIN_GRADE_LOOKUP: "📊",
     AppModule.GRADE_MANAGEMENT: "✏️",
     AppModule.LECTURER_COURSE_GRADES: "📋",
+    AppModule.LECTURER_STUDENT_SEARCH: "🔎",
     AppModule.MY_GRADES: "📈",
     AppModule.PROFILE: "👤",
 }
@@ -70,18 +75,22 @@ class MainView(tk.Tk):
         auth_service: AuthService,
         grade_service: GradeService,
         student_service: StudentService,
+        student_search_service: StudentSearchService,
         lecturer_service: LecturerService,
         account_service: AccountService,
         course_service: CourseService,
+        profile_service: ProfileService,
         session: Session,
     ) -> None:
         super().__init__()
         self.auth_service = auth_service
         self.grade_service = grade_service
         self.student_service = student_service
+        self.student_search_service = student_search_service
         self.lecturer_service = lecturer_service
         self.account_service = account_service
         self.course_service = course_service
+        self.profile_service = profile_service
         self.session = session
         self.logout_requested = False
         self._modules = RbacPolicy.navigation_for(session.role)
@@ -140,7 +149,7 @@ class MainView(tk.Tk):
         tk.Frame(sidebar, bg="#2D4F9E", height=1).pack(fill="x", padx=16, pady=(0, 12))
 
         # Section label
-        section_text = _ROLE_SECTION.get(self.session.role.value, "KHÔNG GIAN HỌC VỤ")
+        section_text = _ROLE_SECTION.get(self.session.role.name, "KHÔNG GIAN HỌC VỤ")
         tk.Label(
             sidebar,
             text=section_text,
@@ -235,7 +244,7 @@ class MainView(tk.Tk):
         _sidebar_link("Đăng xuất", "→", self._logout).pack(fill="x")
 
         # Info note for admin
-        if self.session.role.value == "ADMIN":
+        if self.session.role is Role.ADMIN:
             note_frame = tk.Frame(sidebar, bg="#1E3A8A")
             note_frame.pack(fill="x", padx=16, pady=(0, 12))
             tk.Label(
@@ -269,7 +278,7 @@ class MainView(tk.Tk):
         role_chip(right, self.session.role).pack(side="left")
         tk.Label(
             right,
-            text="  Năm học 2024-2025",
+            text="  Nhóm 05  •  Công nghệ phần mềm",
             bg=SURFACE,
             fg=MUTED,
             font=font(9),
@@ -299,9 +308,7 @@ class MainView(tk.Tk):
 
     # ------------------------------------------------------------------ routing
 
-    def _select_module(
-        self, module: AppModule, *, initial_course_id: int | None = None
-    ) -> None:
+    def _select_module(self, module: AppModule) -> None:
         if not RbacPolicy.can_access(self.session.role, module):
             messagebox.showwarning(
                 "Không có quyền truy cập",
@@ -322,7 +329,14 @@ class MainView(tk.Tk):
             child.destroy()
 
         if module is AppModule.DASHBOARD:
-            self._build_dashboard(self.content)
+            DashboardView(
+                self.content,
+                self.student_search_service,
+                self.grade_service,
+                self.session,
+                self._modules,
+                self._select_module,
+            ).pack(fill="both", expand=True)
         elif module is AppModule.MY_GRADES:
             StudentResultsView(self.content, self.grade_service, self.session).pack(
                 fill="both", expand=True
@@ -332,26 +346,28 @@ class MainView(tk.Tk):
                 fill="both", expand=True
             )
         elif module is AppModule.LECTURER_COURSE_GRADES:
-            LecturerCoursesView(
-                self.content,
-                self.grade_service,
-                self.session,
-                on_open_grades=self._open_grade_entry,
-            ).pack(fill="both", expand=True)
+            LecturerCoursesView(self.content, self.grade_service, self.session).pack(
+                fill="both", expand=True
+            )
         elif module is AppModule.GRADE_MANAGEMENT:
-            GradeEntryView(
-                self.content,
-                self.grade_service,
-                self.session,
-                initial_course_id=initial_course_id,
+            GradeEntryView(self.content, self.grade_service, self.session).pack(
+                fill="both", expand=True
+            )
+        elif module is AppModule.LECTURER_STUDENT_SEARCH:
+            LecturerStudentSearchView(
+                self.content, self.student_search_service, self.session
             ).pack(fill="both", expand=True)
         elif module is AppModule.STUDENT_MANAGEMENT:
             StudentManagementView(
-                self.content, self.student_service, self.session
+                self.content, self.student_service, self.student_search_service, self.session
             ).pack(fill="both", expand=True)
         elif module is AppModule.LECTURER_MANAGEMENT:
             LecturerManagementView(
                 self.content, self.lecturer_service, self.session
+            ).pack(fill="both", expand=True)
+        elif module is AppModule.PROFILE:
+            ProfileView(
+                self.content, self.profile_service, self.auth_service, self.session
             ).pack(fill="both", expand=True)
         elif module is AppModule.ACCOUNT_MANAGEMENT:
             AccountManagementView(
@@ -364,147 +380,7 @@ class MainView(tk.Tk):
         else:
             self._build_placeholder(self.content, module)
 
-    def _open_grade_entry(self, course_id: int | None = None) -> None:
-        """Mở màn hình nhập điểm, giữ học phần đang xem nếu có."""
-        self._select_module(
-            AppModule.GRADE_MANAGEMENT, initial_course_id=course_id
-        )
-
     # ------------------------------------------------------------------ pages
-
-    def _build_dashboard(self, parent: tk.Frame) -> None:
-        generation = self._navigation_generation
-        wrapper = tk.Frame(parent, bg=BACKGROUND)
-        wrapper.pack(fill="both", expand=True, padx=32, pady=28)
-
-        tk.Label(
-            wrapper,
-            text=f"Xin chào, {self.session.full_name}",
-            bg=BACKGROUND,
-            fg=TEXT,
-            font=font(20, "bold"),
-            anchor="w",
-        ).pack(fill="x")
-        tk.Label(
-            wrapper,
-            text=f"{self.session.role.label}  —  {self.session.role.description}",
-            bg=BACKGROUND,
-            fg=MUTED,
-            font=font(9),
-            anchor="w",
-            justify="left",
-            wraplength=820,
-        ).pack(fill="x", pady=(6, 0))
-
-        stats = tk.Frame(wrapper, bg=BACKGROUND)
-        stats.pack(fill="x", pady=(20, 0))
-        if self.session.role is Role.ADMIN:
-            metrics = (
-                ("Sinh viên", lambda result: result.total_students),
-                ("Giảng viên", lambda result: result.total_lecturers),
-                ("Môn học", lambda result: result.total_courses),
-                ("Lớp", lambda result: result.total_classes),
-            )
-            operation = lambda: self.student_service.dashboard(self.session)
-        elif self.session.role is Role.LECTURER:
-            metrics = (("Học phần được phân công", lambda result: result.assigned_courses),)
-            operation = lambda: self.student_service.dashboard(self.session)
-        else:
-            metrics = (
-                ("Học phần", lambda result: len(result.grades)),
-                (
-                    "Học phần đủ điểm",
-                    lambda result: sum(
-                        1 for grade in result.grades if grade.final_score is not None
-                    ),
-                ),
-                (
-                    "Trung bình theo tín chỉ",
-                    lambda result: f"{result.gpa:.2f}" if result.gpa is not None else "—",
-                ),
-            )
-            operation = lambda: self.grade_service.student_results(self.session)
-
-        for column in range(len(metrics)):
-            stats.grid_columnconfigure(column, weight=1, uniform="dashboard-stat")
-        stat_values = []
-        for column, (label, _value) in enumerate(metrics):
-            card, value = create_stat_card(stats, label)
-            card.grid(
-                row=0,
-                column=column,
-                sticky="nsew",
-                padx=(0 if column == 0 else 6, 0 if column == len(metrics) - 1 else 6),
-            )
-            stat_values.append(value)
-        self._dashboard_feedback = tk.Label(
-            wrapper, text="", bg=BACKGROUND, fg=MUTED, font=font(8), anchor="w"
-        )
-        self._dashboard_feedback.pack(fill="x", pady=(4, 0))
-
-        def loaded(result) -> None:
-            if generation != self._navigation_generation:
-                return
-            for value_label, (_label, get_value) in zip(stat_values, metrics):
-                value_label.configure(text=str(get_value(result)))
-
-        def failed(error: BaseException) -> None:
-            if generation != self._navigation_generation:
-                return
-            self._dashboard_feedback.configure(
-                text=f"Không tải được thống kê từ cơ sở dữ liệu: {error}",
-                fg="#B91C1C",
-            )
-
-        run_in_background(self, operation, loaded, failed)
-
-        tk.Label(
-            wrapper,
-            text="Chức năng bạn có thể truy cập",
-            bg=BACKGROUND,
-            fg=TEXT,
-            font=font(11, "bold"),
-            anchor="w",
-        ).pack(fill="x", pady=(24, 10))
-
-        cards = tk.Frame(wrapper, bg=BACKGROUND)
-        cards.pack(fill="both", expand=True)
-        cards.grid_columnconfigure(0, weight=1, uniform="card")
-        cards.grid_columnconfigure(1, weight=1, uniform="card")
-
-        accessible = [m for m in self._modules if m is not AppModule.DASHBOARD]
-        for idx, module in enumerate(accessible):
-            card = self._build_access_card(cards, module)
-            card.grid(row=idx // 2, column=idx % 2, sticky="nsew", padx=7, pady=7)
-        for row in range((len(accessible) + 1) // 2):
-            cards.grid_rowconfigure(row, weight=1)
-
-    def _build_access_card(self, parent: tk.Frame, module: AppModule) -> tk.Frame:
-        card = tk.Frame(
-            parent, bg=SURFACE,
-            highlightbackground=BORDER, highlightthickness=1,
-            cursor="hand2",
-        )
-        inner = tk.Frame(card, bg=SURFACE)
-        inner.pack(fill="both", expand=True, padx=18, pady=14)
-
-        icon = _NAV_ICONS.get(module, "•")
-        title = tk.Label(
-            inner, text=f"{icon}  {module.label}",
-            bg=SURFACE, fg=PRIMARY_DARK,
-            font=font(10, "bold"), anchor="w",
-        )
-        title.pack(fill="x")
-        desc = tk.Label(
-            inner, text=module.description,
-            bg=SURFACE, fg=MUTED,
-            font=font(8), anchor="nw", justify="left", wraplength=280,
-        )
-        desc.pack(fill="both", expand=True, pady=(6, 0))
-
-        for w in (card, inner, title, desc):
-            w.bind("<Button-1>", lambda e, m=module: self._select_module(m))
-        return card
 
     def _build_placeholder(self, parent: tk.Frame, module: AppModule) -> None:
         wrapper = tk.Frame(parent, bg=BACKGROUND)

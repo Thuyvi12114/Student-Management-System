@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from app.dao.user_account_dao import UserAccountDAO
 from app.security.password_hasher import hash_password, verify_password
 from app.security.password_policy import violations
@@ -37,7 +35,6 @@ class AuthService:
         if not verify_password(password, account.password_hash):
             raise AuthError(_INVALID_CREDENTIALS)
 
-        self._account_dao.update_last_login(account.account_id, datetime.now())
         return self._session_manager.start(account)
 
     def require_active_session(self) -> Session:

@@ -1,196 +1,175 @@
 -- =====================================================================
--- STUDENT MANAGEMENT SYSTEM — Script tạo cơ sở dữ liệu MySQL 8.0
+-- UniCore - Student Management System | Nhóm 05
+-- Script tạo cơ sở dữ liệu MySQL 8.0 (tương thích MariaDB 10.5+) theo đúng
+-- tài liệu thiết kế: 5 bảng UserAccounts, Students, Lecturers, Courses, Grades.
 -- Chạy: mysql -u root -p < database/student_management.sql
 --
--- Bao gồm 5 bảng: UserAccounts, Students, Lecturers, Courses, Grades
--- Kèm khóa ngoại, ràng buộc UNIQUE, CHECK và dữ liệu mẫu.
--- Mật khẩu mẫu được lưu dưới dạng băm PBKDF2-HMAC-SHA256 (xem PasswordHasher.java).
+-- Tài khoản mẫu (mật khẩu lưu dạng băm PBKDF2-HMAC-SHA256, không lưu dạng thô):
+--   admin / Admin@123    GV001..GV003 / Gv001@123 ...    SV001..SV010 / Sv001@123 ...
+--   Tên đăng nhập không phân biệt hoa/thường (gv001 = GV001).
+--   SV005 là tài khoản Inactive để kiểm thử chặn đăng nhập.
 -- =====================================================================
 
 CREATE DATABASE IF NOT EXISTS student_management
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
+    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE student_management;
 
 SET NAMES utf8mb4;
 
--- Xóa bảng theo thứ tự khóa ngoại để chạy lại script được nhiều lần.
-SET FOREIGN_KEY_CHECKS = 0;
+
+-- Xóa theo thứ tự ngược của khóa ngoại để có thể chạy lại script
 DROP TABLE IF EXISTS Grades;
 DROP TABLE IF EXISTS Courses;
-DROP TABLE IF EXISTS Students;
 DROP TABLE IF EXISTS Lecturers;
+DROP TABLE IF EXISTS Students;
 DROP TABLE IF EXISTS UserAccounts;
-SET FOREIGN_KEY_CHECKS = 1;
 
 -- ---------------------------------------------------------------------
--- 1. UserAccounts: tài khoản đăng nhập và vai trò (RBAC)
+-- 1. UserAccounts: tài khoản đăng nhập (3 vai trò)
+--    Collation *_ci nên tên đăng nhập không phân biệt hoa/thường.
 -- ---------------------------------------------------------------------
 CREATE TABLE UserAccounts (
-    AccountID    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    Username     VARCHAR(50)     NOT NULL,
-    PasswordHash VARCHAR(255)    NOT NULL,
-    FullName     VARCHAR(100)    NOT NULL,
-    Role         VARCHAR(20)     NOT NULL,
-    Status       VARCHAR(10)     NOT NULL DEFAULT 'ACTIVE',
-    LastLoginAt  DATETIME        NULL,
-    CreatedAt    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UpdatedAt    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (AccountID),
-    CONSTRAINT uq_useraccounts_username UNIQUE (Username),
-    CONSTRAINT ck_useraccounts_role CHECK (Role IN ('ADMIN', 'LECTURER', 'STUDENT')),
-    CONSTRAINT ck_useraccounts_status CHECK (Status IN ('ACTIVE', 'INACTIVE')),
-    CONSTRAINT ck_useraccounts_username_length CHECK (CHAR_LENGTH(Username) >= 3),
-    CONSTRAINT ck_useraccounts_password_hash CHECK (CHAR_LENGTH(PasswordHash) >= 32)
-) ENGINE = InnoDB;
+    account_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    username      VARCHAR(50)     NOT NULL,
+    password_hash VARCHAR(255)    NOT NULL,
+    role          ENUM('Administrator', 'Lecturer', 'Student') NOT NULL,
+    status        ENUM('Active', 'Inactive') NOT NULL DEFAULT 'Active',
+    CONSTRAINT pk_useraccounts PRIMARY KEY (account_id),
+    CONSTRAINT uq_useraccounts_username UNIQUE (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- 2. Students: hồ sơ sinh viên, 1-1 với UserAccounts
+-- 2. Students: mỗi sinh viên có đúng 1 tài khoản (account_id UNIQUE NOT NULL)
 -- ---------------------------------------------------------------------
 CREATE TABLE Students (
-    StudentID      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    AccountID      BIGINT UNSIGNED NOT NULL,
-    StudentCode    VARCHAR(20)     NOT NULL,
-    FullName       VARCHAR(100)    NOT NULL,
-    Gender         VARCHAR(10)     NOT NULL,
-    DateOfBirth    DATE            NOT NULL,
-    Email          VARCHAR(100)    NOT NULL,
-    Phone          VARCHAR(15)     NULL,
-    ClassName      VARCHAR(30)     NOT NULL,
-    EnrollmentYear SMALLINT        NOT NULL,
-    CreatedAt      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (StudentID),
-    CONSTRAINT uq_students_account UNIQUE (AccountID),
-    CONSTRAINT uq_students_code UNIQUE (StudentCode),
-    CONSTRAINT uq_students_email UNIQUE (Email),
-    CONSTRAINT fk_students_account FOREIGN KEY (AccountID)
-        REFERENCES UserAccounts (AccountID)
-        ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT ck_students_gender CHECK (Gender IN ('Male', 'Female', 'Other')),
-    CONSTRAINT ck_students_enrollment_year CHECK (EnrollmentYear BETWEEN 2000 AND 2100),
-    CONSTRAINT ck_students_email CHECK (Email LIKE '%_@_%._%')
-) ENGINE = InnoDB;
+    student_id    VARCHAR(20)     NOT NULL,
+    account_id    BIGINT UNSIGNED NOT NULL,
+    full_name     VARCHAR(100)    NOT NULL,
+    date_of_birth DATE            NOT NULL,
+    gender        VARCHAR(20)     NOT NULL,
+    email         VARCHAR(254)    NOT NULL,
+    phone_number  VARCHAR(20)     NOT NULL,
+    address       VARCHAR(255)    NULL,
+    class_name    VARCHAR(50)     NOT NULL,
+    CONSTRAINT pk_students PRIMARY KEY (student_id),
+    CONSTRAINT uq_students_account UNIQUE (account_id),
+    CONSTRAINT fk_students_account FOREIGN KEY (account_id)
+        REFERENCES UserAccounts (account_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT ck_students_gender CHECK (gender IN ('Nam', 'Nữ', 'Khác')),
+    INDEX idx_students_name (full_name),
+    INDEX idx_students_class (class_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- 3. Lecturers: hồ sơ giảng viên, 1-1 với UserAccounts
+-- 3. Lecturers: mỗi giảng viên có đúng 1 tài khoản
 -- ---------------------------------------------------------------------
 CREATE TABLE Lecturers (
-    LecturerID   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    AccountID    BIGINT UNSIGNED NOT NULL,
-    LecturerCode VARCHAR(20)     NOT NULL,
-    FullName     VARCHAR(100)    NOT NULL,
-    Gender       VARCHAR(10)     NOT NULL,
-    DateOfBirth  DATE            NOT NULL,
-    Email        VARCHAR(100)    NOT NULL,
-    Phone        VARCHAR(15)     NULL,
-    Department   VARCHAR(100)    NOT NULL,
-    Degree       VARCHAR(20)     NOT NULL,
-    CreatedAt    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (LecturerID),
-    CONSTRAINT uq_lecturers_account UNIQUE (AccountID),
-    CONSTRAINT uq_lecturers_code UNIQUE (LecturerCode),
-    CONSTRAINT uq_lecturers_email UNIQUE (Email),
-    CONSTRAINT fk_lecturers_account FOREIGN KEY (AccountID)
-        REFERENCES UserAccounts (AccountID)
-        ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT ck_lecturers_gender CHECK (Gender IN ('Male', 'Female', 'Other')),
-    CONSTRAINT ck_lecturers_degree CHECK (Degree IN ('Bachelor', 'Master', 'Doctor')),
-    CONSTRAINT ck_lecturers_email CHECK (Email LIKE '%_@_%._%')
-) ENGINE = InnoDB;
+    lecturer_id  VARCHAR(20)     NOT NULL,
+    account_id   BIGINT UNSIGNED NOT NULL,
+    full_name    VARCHAR(100)    NOT NULL,
+    email        VARCHAR(254)    NOT NULL,
+    phone_number VARCHAR(20)     NOT NULL,
+    department   VARCHAR(100)    NOT NULL,
+    CONSTRAINT pk_lecturers PRIMARY KEY (lecturer_id),
+    CONSTRAINT uq_lecturers_account UNIQUE (account_id),
+    CONSTRAINT fk_lecturers_account FOREIGN KEY (account_id)
+        REFERENCES UserAccounts (account_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    INDEX idx_lecturers_name (full_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- 4. Courses: môn học và giảng viên phụ trách
+-- 4. Courses: mỗi học phần có đúng 1 giảng viên phụ trách
+--    (RESTRICT: không xóa được giảng viên đang phụ trách học phần)
 -- ---------------------------------------------------------------------
 CREATE TABLE Courses (
-    CourseID    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    CourseCode  VARCHAR(20)     NOT NULL,
-    CourseName  VARCHAR(100)    NOT NULL,
-    Credits     TINYINT UNSIGNED NOT NULL,
-    LecturerID  BIGINT UNSIGNED NULL,
-    Semester    VARCHAR(10)     NOT NULL,
-    AcademicYear VARCHAR(9)     NOT NULL,
-    CreatedAt   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (CourseID),
-    CONSTRAINT uq_courses_code UNIQUE (CourseCode),
-    CONSTRAINT fk_courses_lecturer FOREIGN KEY (LecturerID)
-        REFERENCES Lecturers (LecturerID)
-        ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT ck_courses_credits CHECK (Credits BETWEEN 1 AND 10),
-    CONSTRAINT ck_courses_semester CHECK (Semester IN ('HK1', 'HK2', 'HK3')),
-    CONSTRAINT ck_courses_academic_year CHECK (AcademicYear LIKE '____-____')
-) ENGINE = InnoDB;
+    course_id   VARCHAR(20)      NOT NULL,
+    lecturer_id VARCHAR(20)      NOT NULL,
+    course_name VARCHAR(150)     NOT NULL,
+    credits     TINYINT UNSIGNED NOT NULL,
+    description TEXT             NULL,
+    CONSTRAINT pk_courses PRIMARY KEY (course_id),
+    CONSTRAINT fk_courses_lecturer FOREIGN KEY (lecturer_id)
+        REFERENCES Lecturers (lecturer_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT ck_courses_credits CHECK (credits > 0),
+    INDEX idx_courses_lecturer (lecturer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- 5. Grades: điểm quá trình / cuối kỳ của sinh viên theo môn học
+-- 5. Grades: điểm cuối kỳ. Mỗi cặp (student_id, course_id) tối đa 1 điểm.
+--    (RESTRICT: không xóa sinh viên / học phần đã có điểm)
 -- ---------------------------------------------------------------------
 CREATE TABLE Grades (
-    GradeID      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    StudentID    BIGINT UNSIGNED NOT NULL,
-    CourseID     BIGINT UNSIGNED NOT NULL,
-    ProcessScore DECIMAL(4, 2)  NULL,
-    FinalScore   DECIMAL(4, 2)  NULL,
-    Status       VARCHAR(10)    NOT NULL DEFAULT 'PENDING',
-    CreatedAt    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UpdatedAt    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (GradeID),
-    CONSTRAINT uq_grades_student_course UNIQUE (StudentID, CourseID),
-    CONSTRAINT fk_grades_student FOREIGN KEY (StudentID)
-        REFERENCES Students (StudentID)
-        ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT fk_grades_course FOREIGN KEY (CourseID)
-        REFERENCES Courses (CourseID)
-        ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT ck_grades_process_score CHECK (ProcessScore IS NULL OR ProcessScore BETWEEN 0 AND 10),
-    CONSTRAINT ck_grades_final_score CHECK (FinalScore IS NULL OR FinalScore BETWEEN 0 AND 10),
-    CONSTRAINT ck_grades_status CHECK (Status IN ('PENDING', 'PASSED', 'FAILED'))
-) ENGINE = InnoDB;
+    grade_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    student_id  VARCHAR(20)     NOT NULL,
+    course_id   VARCHAR(20)     NOT NULL,
+    grade_value DECIMAL(4, 2)   NOT NULL,
+    CONSTRAINT pk_grades PRIMARY KEY (grade_id),
+    CONSTRAINT uq_grades_student_course UNIQUE (student_id, course_id),
+    CONSTRAINT fk_grades_student FOREIGN KEY (student_id)
+        REFERENCES Students (student_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_grades_course FOREIGN KEY (course_id)
+        REFERENCES Courses (course_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT ck_grades_value CHECK (grade_value BETWEEN 0 AND 10),
+    INDEX idx_grades_course (course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- =====================================================================
 -- DỮ LIỆU MẪU
--- Mật khẩu mẫu (lưu dạng băm PBKDF2, không lưu mật khẩu gốc):
---   admin / Admin@123      (ADMIN)
---   gv001 / Lecturer@123   (LECTURER)
---   sv001 / Student@123    (STUDENT, Active)
---   sv002 / Student@123    (STUDENT, Inactive — dùng để kiểm thử chặn đăng nhập)
---   sv003 … sv010 / Student@123 (STUDENT, Active — nhiều lớp khác nhau)
 -- =====================================================================
 
-INSERT INTO UserAccounts (AccountID, Username, PasswordHash, FullName, Role, Status) VALUES
-(1, 'admin', 'pbkdf2_sha256$210000$4CsYy877ObhxClY4l/RAhw==$ul4dUCYLiZ/ZFD6uHwvaKVnjS8Q64J+AZquTpvOzSWM=', 'Quản trị viên hệ thống', 'ADMIN', 'ACTIVE'),
-(2, 'gv001', 'pbkdf2_sha256$210000$2aRrmNaRteInsXdUVXv+Pw==$J6sJ7k9sc7BEjCiGwba+JigwK2/JHGpfiIQ+vOSFGnA=', 'Nguyễn Văn Minh', 'LECTURER', 'ACTIVE'),
-(3, 'sv001', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Trần Thị Lan', 'STUDENT', 'ACTIVE'),
-(4, 'sv002', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Lê Hoàng Nam', 'STUDENT', 'INACTIVE'),
-(5, 'sv003', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Nguyễn Minh Anh', 'STUDENT', 'ACTIVE'),
-(6, 'sv004', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Trần Quốc Bảo', 'STUDENT', 'ACTIVE'),
-(7, 'sv005', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Lê Hoàng Phúc', 'STUDENT', 'ACTIVE'),
-(8, 'sv006', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Phạm Ngọc Linh', 'STUDENT', 'ACTIVE'),
-(9, 'sv007', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Võ Thị Mai', 'STUDENT', 'ACTIVE'),
-(10, 'sv008', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Đặng Văn Hùng', 'STUDENT', 'ACTIVE'),
-(11, 'sv009', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Bùi Khánh Vy', 'STUDENT', 'ACTIVE'),
-(12, 'sv010', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Hồ Đức Thịnh', 'STUDENT', 'ACTIVE');
+INSERT INTO UserAccounts (username, password_hash, role, status) VALUES
+  ('admin', 'pbkdf2_sha256$210000$Ll2uM2FY8AAFIFoKws0lIg==$nwhbBUqUQuhbNlbAb3ICOVzG2ktZ3AF8nc6LfJ/q/EY=', 'Administrator', 'Active'),
+  ('GV001', 'pbkdf2_sha256$210000$wS1jO+AcDAZn+8YGW+lj0Q==$Naj3EXH7IIPViQCOKDaA+96qR87Tz8u/Guq0obZ6psA=', 'Lecturer', 'Active'),
+  ('GV002', 'pbkdf2_sha256$210000$3whAEK/c8vxAILKPu287zA==$LpUkaXl/JKZmiFEqJBt9TS5advhSOUiXk7jaT/LBJLU=', 'Lecturer', 'Active'),
+  ('GV003', 'pbkdf2_sha256$210000$x/TXQf85DRr+63+eM37LzA==$iMoSlzDv4h9sWR15TEpZ/TJv8hcCCIjnDX4pCRXrhqo=', 'Lecturer', 'Active'),
+  ('SV001', 'pbkdf2_sha256$210000$lTHlC4rFNk+I/S8jXie0cA==$XLpUqyCh026wflAdrtmm2992t+EbehApuUPjBDIr2LE=', 'Student', 'Active'),
+  ('SV002', 'pbkdf2_sha256$210000$aE23iHSyY+y787nK26LbOQ==$R5CwEaLgYdpqUXDMni5N/FNrHhDXK7cQk5VuCaEbdTo=', 'Student', 'Active'),
+  ('SV003', 'pbkdf2_sha256$210000$56kXhgy9kqlZdQBDIGDtew==$WgSJqjiliCm2uo+fPaVmvL3vVvuWaETcVTtTP0Y7VlY=', 'Student', 'Active'),
+  ('SV004', 'pbkdf2_sha256$210000$nKTPDxTZ5HF0xGb7/XzZPg==$u0++LX5r8CPDjJNWDMdEgpS0fExqW4jfVXxwry4TAMM=', 'Student', 'Active'),
+  ('SV005', 'pbkdf2_sha256$210000$vO0CktkSjzPJw6MPU2/csA==$QR1pn4D354LXf2FZuaJMVTpY+2IEE7hg5Ou1awNbqzo=', 'Student', 'Inactive'),
+  ('SV006', 'pbkdf2_sha256$210000$L91J7Wd/06WsT8xH7103rQ==$H/GwrCgLqvj7fk+/zmpzPWO+JjN4HVSn2akL7qoIbb4=', 'Student', 'Active'),
+  ('SV007', 'pbkdf2_sha256$210000$xsB+LlZUEUyRvy6GX0anbw==$NHqMSwbAEEVogQABVa/KitCEudlciiDGz8TL8kdo1zE=', 'Student', 'Active'),
+  ('SV008', 'pbkdf2_sha256$210000$0wyxhAVkkYkvi0djCRGOlw==$DlIOlKAPutYUV2o+DH8wlYkZ23r0Ju7+JGSsltFGiec=', 'Student', 'Active'),
+  ('SV009', 'pbkdf2_sha256$210000$qGEo1Hm4qnuR2i6Tq3WFAQ==$oK6RPsg42WtcP4vCjlNZAWaL4d/CNM9IBIx/2ucYWtI=', 'Student', 'Active'),
+  ('SV010', 'pbkdf2_sha256$210000$ZD+hbJNu/mNbnsO0u4+gng==$d5qWOh+N2dLbhV8jQFRlCchn4SerTYWkrfFDw/k4Lo0=', 'Student', 'Active');
 
-INSERT INTO Lecturers (LecturerID, AccountID, LecturerCode, FullName, Gender, DateOfBirth, Email, Phone, Department, Degree) VALUES
-(1, 2, 'GV001', 'Nguyễn Văn Minh', 'Male', '1980-05-12', 'minh.nv@university.edu.vn', '0901234567', 'Khoa Công nghệ thông tin', 'Doctor');
+INSERT INTO Lecturers (lecturer_id, account_id, full_name, email, phone_number, department) VALUES
+  ('GV001', (SELECT account_id FROM UserAccounts WHERE username = 'GV001'), 'Trần Hoàng Nam', 'nam.tran@unicore.edu.vn', '0903456789', 'Công nghệ thông tin'),
+  ('GV002', (SELECT account_id FROM UserAccounts WHERE username = 'GV002'), 'Lê Thị Mai', 'mai.le@unicore.edu.vn', '0904567890', 'Toán - Tin'),
+  ('GV003', (SELECT account_id FROM UserAccounts WHERE username = 'GV003'), 'Phạm Quốc Việt', 'viet.pham@unicore.edu.vn', '0905678901', 'Công nghệ phần mềm');
 
-INSERT INTO Students (StudentID, AccountID, StudentCode, FullName, Gender, DateOfBirth, Email, Phone, ClassName, EnrollmentYear) VALUES
-(1, 3, 'SV001', 'Trần Thị Lan', 'Female', '2004-03-08', 'lan.tt@student.edu.vn', '0912345678', 'CNTT-K22', 2022),
-(2, 4, 'SV002', 'Lê Hoàng Nam', 'Male', '2004-11-21', 'nam.lh@student.edu.vn', '0987654321', 'CNTT-K22', 2022),
-(3, 5, 'SV003', 'Nguyễn Minh Anh', 'Female', '2004-07-15', 'minhanh.nguyen@student.edu.vn', '0903456789', 'CNTT-K22A', 2022),
-(4, 6, 'SV004', 'Trần Quốc Bảo', 'Male', '2004-09-02', 'quocbao.tran@student.edu.vn', '0914567890', 'CNTT-K22A', 2022),
-(5, 7, 'SV005', 'Lê Hoàng Phúc', 'Male', '2005-01-20', 'hoangphuc.le@student.edu.vn', '0925678901', 'CNTT-K23B', 2023),
-(6, 8, 'SV006', 'Phạm Ngọc Linh', 'Female', '2005-06-11', 'ngoclinh.pham@student.edu.vn', '0936789012', 'CNTT-K23B', 2023),
-(7, 9, 'SV007', 'Võ Thị Mai', 'Female', '2006-02-28', 'thimai.vo@student.edu.vn', '0947890123', 'QTKD-K24A', 2024),
-(8, 10, 'SV008', 'Đặng Văn Hùng', 'Male', '2006-12-05', 'vanhung.dang@student.edu.vn', '0958901234', 'QTKD-K24A', 2024),
-(9, 11, 'SV009', 'Bùi Khánh Vy', 'Female', '2006-04-18', 'khanhvy.bui@student.edu.vn', '0969012345', 'KTPM-K24A', 2024),
-(10, 12, 'SV010', 'Hồ Đức Thịnh', 'Male', '2004-08-09', 'ducthinh.ho@student.edu.vn', '0970123456', 'HTTT-K23A', 2023);
+INSERT INTO Students (student_id, account_id, full_name, date_of_birth, gender, email, phone_number, address, class_name) VALUES
+  ('SV001', (SELECT account_id FROM UserAccounts WHERE username = 'SV001'), 'Nguyễn Minh Anh', '2006-08-15', 'Nữ', 'minhanh.nguyen@sv.unicore.edu.vn', '0901234567', '24 Nguyễn Văn Cừ, Phường 4, Quận 5, TP. Hồ Chí Minh', 'CNTT-K24A'),
+  ('SV002', (SELECT account_id FROM UserAccounts WHERE username = 'SV002'), 'Trần Quốc Bảo', '2006-03-02', 'Nam', 'quocbao.tran@sv.unicore.edu.vn', '0912345678', '15 Lê Lợi, Quận 1, TP. Hồ Chí Minh', 'CNTT-K24A'),
+  ('SV003', (SELECT account_id FROM UserAccounts WHERE username = 'SV003'), 'Lê Hoàng Phúc', '2005-11-20', 'Nam', 'hoangphuc.le@sv.unicore.edu.vn', '0933456789', NULL, 'CNTT-K24A'),
+  ('SV004', (SELECT account_id FROM UserAccounts WHERE username = 'SV004'), 'Phạm Ngọc Linh', '2006-01-09', 'Nữ', 'ngoclinh.pham@sv.unicore.edu.vn', '0904567890', '88 Trần Hưng Đạo, Quận 5, TP. Hồ Chí Minh', 'CNTT-K24B'),
+  ('SV005', (SELECT account_id FROM UserAccounts WHERE username = 'SV005'), 'Võ Đức Huy', '2005-07-30', 'Nam', 'duchuy.vo@sv.unicore.edu.vn', '0905678901', NULL, 'CNTT-K24B'),
+  ('SV006', (SELECT account_id FROM UserAccounts WHERE username = 'SV006'), 'Đặng Thu Hà', '2006-05-12', 'Nữ', 'thuha.dang@sv.unicore.edu.vn', '0916789012', '7 Hai Bà Trưng, Quận 3, TP. Hồ Chí Minh', 'QTKD-K24A'),
+  ('SV007', (SELECT account_id FROM UserAccounts WHERE username = 'SV007'), 'Bùi Gia Hân', '2006-09-25', 'Nữ', 'giahan.bui@sv.unicore.edu.vn', '0927890123', NULL, 'QTKD-K24A'),
+  ('SV008', (SELECT account_id FROM UserAccounts WHERE username = 'SV008'), 'Đỗ Tuấn Kiệt', '2005-12-03', 'Nam', 'tuankiet.do@sv.unicore.edu.vn', '0938901234', NULL, 'CNTT-K24A'),
+  ('SV009', (SELECT account_id FROM UserAccounts WHERE username = 'SV009'), 'Nguyễn Hoàng Long', '2006-04-18', 'Nam', 'hoanglong.nguyen@sv.unicore.edu.vn', '0949012345', NULL, 'CNTT-K24B'),
+  ('SV010', (SELECT account_id FROM UserAccounts WHERE username = 'SV010'), 'Nguyễn Khánh Vy', '2006-06-21', 'Nữ', 'khanhvy.nguyen@sv.unicore.edu.vn', '0950123456', NULL, 'CNTT-K24A');
 
-INSERT INTO Courses (CourseID, CourseCode, CourseName, Credits, LecturerID, Semester, AcademicYear) VALUES
-(1, 'INT2203', 'Cơ sở dữ liệu', 3, 1, 'HK1', '2025-2026'),
-(2, 'INT2204', 'Lập trình hướng đối tượng', 3, 1, 'HK1', '2025-2026'),
-(3, 'INT3306', 'Phát triển ứng dụng web', 4, 1, 'HK2', '2025-2026');
+INSERT INTO Courses (course_id, lecturer_id, course_name, credits, description) VALUES
+  ('CS101', 'GV001', 'Nhập môn lập trình', 3, 'Làm quen với tư duy lập trình, biến, cấu trúc điều khiển, hàm và xử lý dữ liệu cơ bản.'),
+  ('CS201', 'GV001', 'Cơ sở dữ liệu', 3, 'Trang bị kiến thức về mô hình dữ liệu quan hệ, thiết kế cơ sở dữ liệu, chuẩn hóa và ngôn ngữ truy vấn SQL. Thực hành tổ chức, khai thác và bảo toàn tính toàn vẹn dữ liệu.'),
+  ('CS202', 'GV001', 'Cấu trúc dữ liệu và giải thuật', 4, 'Các cấu trúc dữ liệu nền tảng (danh sách, cây, đồ thị) và giải thuật sắp xếp, tìm kiếm.'),
+  ('SE201', 'GV003', 'Công nghệ phần mềm', 3, 'Quy trình phát triển phần mềm, phân tích yêu cầu, thiết kế và kiểm thử.'),
+  ('MA101', 'GV002', 'Toán rời rạc', 3, 'Logic, tập hợp, quan hệ, đồ thị và tổ hợp ứng dụng trong khoa học máy tính.'),
+  ('CS203', 'GV003', 'Lập trình hướng đối tượng', 4, 'Các nguyên lý hướng đối tượng: đóng gói, kế thừa, đa hình và mẫu thiết kế cơ bản.'),
+  ('CS301', 'GV002', 'Mạng máy tính', 3, NULL);
 
-INSERT INTO Grades (GradeID, StudentID, CourseID, ProcessScore, FinalScore, Status) VALUES
-(1, 1, 1, 8.50, 9.00, 'PASSED'),
-(2, 1, 2, 7.50, 8.00, 'PASSED'),
-(3, 2, 1, 4.00, 5.50, 'FAILED');
+INSERT INTO Grades (student_id, course_id, grade_value) VALUES
+  ('SV001', 'CS101', 8.50),
+  ('SV001', 'CS201', 9.00),
+  ('SV001', 'CS202', 8.00),
+  ('SV001', 'MA101', 8.50),
+  ('SV002', 'CS101', 7.50),
+  ('SV002', 'CS201', 7.50),
+  ('SV002', 'MA101', 6.50),
+  ('SV003', 'CS101', 7.00),
+  ('SV003', 'CS201', 8.00),
+  ('SV004', 'CS101', 9.00),
+  ('SV005', 'CS101', 6.00),
+  ('SV006', 'SE201', 8.00);

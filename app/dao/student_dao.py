@@ -6,16 +6,6 @@ from app.dao.base import BaseDAO
 from app.models import StudentOption, StudentRecord
 
 _COLUMNS = "student_id, account_id, full_name, date_of_birth, gender, email, phone_number, address, class_name"
-_OPTION_COLUMNS = "StudentID, StudentCode, FullName, ClassName"
-
-
-def _option(row: tuple) -> StudentOption:
-    return StudentOption(
-        student_id=int(row[0]),
-        student_code=str(row[1]),
-        full_name=str(row[2]),
-        class_name=str(row[3]),
-    )
 
 
 def _record(row: tuple) -> StudentRecord:
@@ -40,24 +30,6 @@ class StudentDAO(BaseDAO):
     def find_by_account(self, account_id: int) -> StudentRecord | None:
         row = self.one(f"SELECT {_COLUMNS} FROM Students WHERE account_id = %s", (account_id,), action="tìm hồ sơ sinh viên")
         return _record(row) if row else None
-
-    def find_option_by_account(self, account_id: int) -> StudentOption | None:
-        """Hồ sơ rút gọn dùng cho bảng điểm (có mã sinh viên và mã số nội bộ)."""
-        row = self.one(
-            f"SELECT {_OPTION_COLUMNS} FROM Students WHERE AccountID = %s",
-            (account_id,),
-            action="tìm sinh viên theo tài khoản",
-        )
-        return _option(row) if row else None
-
-    def find_option_by_id(self, student_id: int) -> StudentOption | None:
-        """Kiểm tra sinh viên tồn tại và trả hồ sơ rút gọn cho bảng điểm."""
-        row = self.one(
-            f"SELECT {_OPTION_COLUMNS} FROM Students WHERE StudentID = %s",
-            (student_id,),
-            action="tìm sinh viên theo mã",
-        )
-        return _option(row) if row else None
 
     def exists(self, student_id: str, *, conn=None) -> bool:
         """UC-19: kiểm tra trùng mã sinh viên (không sửa dữ liệu)."""
@@ -106,12 +78,5 @@ class StudentDAO(BaseDAO):
         return count
 
     def list_options(self) -> list[StudentOption]:
-        rows = self.query(
-            f"SELECT {_OPTION_COLUMNS} FROM Students ORDER BY StudentCode",
-            action="tải danh sách sinh viên",
-        )
-        return [_option(row) for row in rows]
-
-    def list_all(self) -> list[StudentRecord]:
-        rows = self.query(f"SELECT {_COLUMNS} FROM Students ORDER BY student_id", action="tải tất cả sinh viên")
-        return [_record(r) for r in rows]
+        rows = self.query("SELECT student_id, full_name, class_name FROM Students ORDER BY student_id", action="tải danh sách sinh viên")
+        return [StudentOption(str(r[0]), str(r[1]), str(r[2])) for r in rows]

@@ -1,4 +1,4 @@
-"""Database-backed course management and assigned-course lookup."""
+"""UI 1.4 / 1.10 - Xem và quản lý học phần (UC-12, UC-13)."""
 
 from __future__ import annotations
 
@@ -23,8 +23,6 @@ from app.ui.theme import (
 )
 
 _PAGE_SIZE = 8
-_ALL_SEMESTERS = "Tất cả học kỳ"
-_SEMESTERS = ("HK1", "HK2", "HK3")
 
 
 class CourseManagementView(tk.Frame):
@@ -45,7 +43,7 @@ class CourseManagementView(tk.Frame):
         self._page = 1
         self._total_pages = 0
         self._search_after_id: str | None = None
-        self._courses: dict[int, CourseOption] = {}
+        self._courses: dict[str, CourseOption] = {}
         self._build()
         self._load()
 
@@ -57,12 +55,12 @@ class CourseManagementView(tk.Frame):
         title_copy = tk.Frame(title_row, bg=BACKGROUND)
         title_copy.pack(side="left", fill="x", expand=True)
         tk.Label(
-            title_copy, text="Quản lý môn học", bg=BACKGROUND, fg=TEXT,
+            title_copy, text="Quản lý học phần", bg=BACKGROUND, fg=TEXT,
             font=font(20, "bold"), anchor="w",
         ).pack(fill="x")
         tk.Label(
             title_copy,
-            text="Tra cứu học phần, số tín chỉ, học kỳ và giảng viên phụ trách.",
+            text="Tra cứu học phần, số tín chỉ và giảng viên phụ trách. Không thể xóa học phần đã có điểm.",
             bg=BACKGROUND, fg=MUTED, font=font(9), anchor="w",
         ).pack(fill="x", pady=(5, 0))
         if self._is_admin:
@@ -81,17 +79,6 @@ class CourseManagementView(tk.Frame):
         entry.pack(fill="x", padx=10, pady=8)
         entry.bind("<KeyRelease>", self._schedule_search)
 
-        self._semester = tk.StringVar(value=_ALL_SEMESTERS)
-        semester_combo = ttk.Combobox(
-            filters,
-            textvariable=self._semester,
-            values=[_ALL_SEMESTERS, *_SEMESTERS],
-            state="readonly",
-            width=18,
-            font=font(9),
-        )
-        semester_combo.pack(side="left", padx=(0, 8), ipady=5)
-        semester_combo.bind("<<ComboboxSelected>>", self._filter_changed)
         secondary_button(filters, "Xóa bộ lọc", self._clear_filters).pack(side="left")
 
         card = tk.Frame(page, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
@@ -114,9 +101,8 @@ class CourseManagementView(tk.Frame):
             ("course_code", "Mã học phần", 120),
             ("course_name", "Tên học phần", 220),
             ("credits", "Tín chỉ", 70),
-            ("semester", "Học kỳ", 70),
-            ("academic_year", "Năm học", 100),
-            ("lecturer", "Giảng viên phụ trách", 190),
+            ("lecturer", "Giảng viên phụ trách", 220),
+            ("description", "Mô tả", 260),
         )
         self._tree = ttk.Treeview(
             inner, columns=[column[0] for column in columns], show="headings",
@@ -170,20 +156,17 @@ class CourseManagementView(tk.Frame):
 
     def _clear_filters(self) -> None:
         self._keyword.set("")
-        self._semester.set(_ALL_SEMESTERS)
         self._page = 1
         self._load()
 
     def _load(self) -> None:
         self._summary.configure(text="Đang tải...")
         keyword = self._keyword.get().strip() or None
-        semester = self._semester.get()
-        semester = None if semester == _ALL_SEMESTERS else semester
         run_in_background(
             self,
             lambda: self._service.search(
                 self._session, keyword, page=self._page,
-                page_size=_PAGE_SIZE, semester=semester,
+                page_size=_PAGE_SIZE,
             ),
             self._loaded,
             self._failed,
@@ -201,9 +184,8 @@ class CourseManagementView(tk.Frame):
                     course.course_code,
                     course.course_name,
                     course.credits,
-                    course.semester,
-                    course.academic_year,
-                    course.lecturer_name or "—",
+                    course.lecturer_name,
+                    (course.description or "—").replace("\n", " ")[:60],
                 ),
             )
         start = (result.page - 1) * result.page_size + 1 if result.total_count else 0
@@ -238,7 +220,7 @@ class CourseManagementView(tk.Frame):
 
     def _selected_course(self) -> CourseOption | None:
         selection = self._tree.selection()
-        return self._courses.get(int(selection[0])) if selection else None
+        return self._courses.get(selection[0]) if selection else None
 
     def _show_detail(self, _event: tk.Event | None = None) -> None:
         course = self._selected_course()
@@ -248,9 +230,8 @@ class CourseManagementView(tk.Frame):
             ("Mã học phần", course.course_code),
             ("Tên học phần", course.course_name),
             ("Số tín chỉ", str(course.credits)),
-            ("Học kỳ", course.semester),
-            ("Năm học", course.academic_year),
-            ("Giảng viên phụ trách", course.lecturer_name or "—"),
+            ("Giảng viên phụ trách", f"{course.lecturer_name} ({course.lecturer_id})"),
+            ("Mô tả", course.description or "Chưa có mô tả"),
         )
         dialog = tk.Toplevel(self)
         dialog.title("Chi tiết học phần")
@@ -264,7 +245,7 @@ class CourseManagementView(tk.Frame):
         for label, value in details:
             tk.Label(
                 body, text=f"{label}:  {value}", bg=SURFACE, fg=TEXT,
-                font=font(9), anchor="w",
+                font=font(9), anchor="w", justify="left", wraplength=420,
             ).pack(fill="x", padx=20, pady=5)
         secondary_button(body, "Đóng", dialog.destroy).pack(anchor="e", padx=20, pady=16)
         dialog.grab_set()
@@ -292,29 +273,20 @@ class CourseManagementView(tk.Frame):
 
         fields: dict[str, tk.StringVar] = {}
         for key, label, initial in (
-            ("course_code", "Mã học phần", course.course_code if course else ""),
+            ("course_id", "Mã học phần", course.course_id if course else ""),
             ("course_name", "Tên học phần", course.course_name if course else ""),
-            ("credits", "Số tín chỉ", str(course.credits) if course else ""),
-            ("academic_year", "Năm học (YYYY-YYYY)", course.academic_year if course else ""),
+            ("credits", "Số tín chỉ (1-10)", str(course.credits) if course else ""),
+            ("description", "Mô tả (không bắt buộc)", (course.description or "") if course else ""),
         ):
             tk.Label(body, text=label, bg=SURFACE, fg=TEXT, font=font(8), anchor="w").pack(
                 fill="x", padx=20, pady=(7, 0)
             )
             value = tk.StringVar(value=initial)
-            ttk.Entry(body, textvariable=value, font=font(9)).pack(
-                fill="x", padx=20, pady=(3, 0)
-            )
+            entry = ttk.Entry(body, textvariable=value, font=font(9), width=52)
+            entry.pack(fill="x", padx=20, pady=(3, 0))
+            if key == "course_id" and course is not None:
+                entry.configure(state="readonly")  # mã học phần bất biến
             fields[key] = value
-
-        semester_var = tk.StringVar(value=course.semester if course else _SEMESTERS[0])
-        tk.Label(body, text="Học kỳ", bg=SURFACE, fg=TEXT, font=font(8), anchor="w").pack(
-            fill="x", padx=20, pady=(7, 0)
-        )
-        semester_combo = ttk.Combobox(
-            body, textvariable=semester_var, values=_SEMESTERS,
-            state="readonly", font=font(9),
-        )
-        semester_combo.pack(fill="x", padx=20, pady=(3, 0))
 
         lecturer_var = tk.StringVar(value="Đang tải giảng viên...")
         tk.Label(body, text="Giảng viên phụ trách", bg=SURFACE, fg=TEXT, font=font(8), anchor="w").pack(
@@ -332,9 +304,9 @@ class CourseManagementView(tk.Frame):
 
         def loaded_options(options: list[Lecturer]) -> None:
             lecturers.extend(options)
-            labels = [f"{item.lecturer_code} - {item.full_name}" for item in lecturers]
+            labels = [f"{item.lecturer_id} - {item.full_name}" for item in lecturers]
             lecturer_combo.configure(values=labels, state="readonly")
-            if course and course.lecturer_id is not None:
+            if course:
                 match = next(
                     (i for i, item in enumerate(lecturers) if item.lecturer_id == course.lecturer_id),
                     None,
@@ -354,20 +326,15 @@ class CourseManagementView(tk.Frame):
             if not lecturers or lecturer_combo.current() < 0:
                 feedback.configure(text="Vui lòng chọn giảng viên phụ trách.")
                 return
-            try:
-                credits = int(fields["credits"].get())
-            except ValueError:
-                feedback.configure(text="Số tín chỉ phải là số nguyên.")
-                return
             lecturer_id = lecturers[lecturer_combo.current()].lecturer_id
             values = dict(
-                course_code=fields["course_code"].get(),
                 course_name=fields["course_name"].get(),
-                credits=credits,
+                credits=fields["credits"].get(),
                 lecturer_id=lecturer_id,
-                semester=semester_var.get(),
-                academic_year=fields["academic_year"].get(),
+                description=fields["description"].get(),
             )
+            if course is None:
+                values["course_id"] = fields["course_id"].get()
             save_button.configure(state="disabled")
             feedback.configure(text="Đang lưu...", fg=MUTED)
 
@@ -414,7 +381,7 @@ class CourseManagementView(tk.Frame):
             return
         if not messagebox.askyesno(
             "Xác nhận xóa",
-            f"Xóa học phần {course.course_code} - {course.course_name}? "
+            f"Xóa học phần {course.course_id} - {course.course_name}? "
             "Học phần đã có điểm sẽ không thể xóa.",
             parent=self,
         ):
