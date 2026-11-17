@@ -299,7 +299,9 @@ class MainView(tk.Tk):
 
     # ------------------------------------------------------------------ routing
 
-    def _select_module(self, module: AppModule) -> None:
+    def _select_module(
+        self, module: AppModule, *, initial_course_id: int | None = None
+    ) -> None:
         if not RbacPolicy.can_access(self.session.role, module):
             messagebox.showwarning(
                 "Không có quyền truy cập",
@@ -330,13 +332,19 @@ class MainView(tk.Tk):
                 fill="both", expand=True
             )
         elif module is AppModule.LECTURER_COURSE_GRADES:
-            LecturerCoursesView(self.content, self.grade_service, self.session).pack(
-                fill="both", expand=True
-            )
+            LecturerCoursesView(
+                self.content,
+                self.grade_service,
+                self.session,
+                on_open_grades=self._open_grade_entry,
+            ).pack(fill="both", expand=True)
         elif module is AppModule.GRADE_MANAGEMENT:
-            GradeEntryView(self.content, self.grade_service, self.session).pack(
-                fill="both", expand=True
-            )
+            GradeEntryView(
+                self.content,
+                self.grade_service,
+                self.session,
+                initial_course_id=initial_course_id,
+            ).pack(fill="both", expand=True)
         elif module is AppModule.STUDENT_MANAGEMENT:
             StudentManagementView(
                 self.content, self.student_service, self.session
@@ -355,6 +363,12 @@ class MainView(tk.Tk):
             ).pack(fill="both", expand=True)
         else:
             self._build_placeholder(self.content, module)
+
+    def _open_grade_entry(self, course_id: int | None = None) -> None:
+        """Mở màn hình nhập điểm, giữ học phần đang xem nếu có."""
+        self._select_module(
+            AppModule.GRADE_MANAGEMENT, initial_course_id=course_id
+        )
 
     # ------------------------------------------------------------------ pages
 
@@ -401,7 +415,7 @@ class MainView(tk.Tk):
                 (
                     "Học phần đủ điểm",
                     lambda result: sum(
-                        1 for grade in result.grades if grade.average_score is not None
+                        1 for grade in result.grades if grade.final_score is not None
                     ),
                 ),
                 (

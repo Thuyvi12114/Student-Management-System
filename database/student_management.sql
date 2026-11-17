@@ -153,20 +153,37 @@ CREATE TABLE Grades (
 --   gv001 / Lecturer@123   (LECTURER)
 --   sv001 / Student@123    (STUDENT, Active)
 --   sv002 / Student@123    (STUDENT, Inactive — dùng để kiểm thử chặn đăng nhập)
+--   sv003 … sv010 / Student@123 (STUDENT, Active — nhiều lớp khác nhau)
 -- =====================================================================
 
 INSERT INTO UserAccounts (AccountID, Username, PasswordHash, FullName, Role, Status) VALUES
 (1, 'admin', 'pbkdf2_sha256$210000$4CsYy877ObhxClY4l/RAhw==$ul4dUCYLiZ/ZFD6uHwvaKVnjS8Q64J+AZquTpvOzSWM=', 'Quản trị viên hệ thống', 'ADMIN', 'ACTIVE'),
 (2, 'gv001', 'pbkdf2_sha256$210000$2aRrmNaRteInsXdUVXv+Pw==$J6sJ7k9sc7BEjCiGwba+JigwK2/JHGpfiIQ+vOSFGnA=', 'Nguyễn Văn Minh', 'LECTURER', 'ACTIVE'),
 (3, 'sv001', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Trần Thị Lan', 'STUDENT', 'ACTIVE'),
-(4, 'sv002', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Lê Hoàng Nam', 'STUDENT', 'INACTIVE');
+(4, 'sv002', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Lê Hoàng Nam', 'STUDENT', 'INACTIVE'),
+(5, 'sv003', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Nguyễn Minh Anh', 'STUDENT', 'ACTIVE'),
+(6, 'sv004', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Trần Quốc Bảo', 'STUDENT', 'ACTIVE'),
+(7, 'sv005', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Lê Hoàng Phúc', 'STUDENT', 'ACTIVE'),
+(8, 'sv006', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Phạm Ngọc Linh', 'STUDENT', 'ACTIVE'),
+(9, 'sv007', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Võ Thị Mai', 'STUDENT', 'ACTIVE'),
+(10, 'sv008', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Đặng Văn Hùng', 'STUDENT', 'ACTIVE'),
+(11, 'sv009', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Bùi Khánh Vy', 'STUDENT', 'ACTIVE'),
+(12, 'sv010', 'pbkdf2_sha256$210000$fmeEAjzoyFMN5n+3YOpZsw==$z7Rc6J8Tx9aYV0jLSWBZ1tNGCk1EQkKmxu0FCmYQL+I=', 'Hồ Đức Thịnh', 'STUDENT', 'ACTIVE');
 
 INSERT INTO Lecturers (LecturerID, AccountID, LecturerCode, FullName, Gender, DateOfBirth, Email, Phone, Department, Degree) VALUES
 (1, 2, 'GV001', 'Nguyễn Văn Minh', 'Male', '1980-05-12', 'minh.nv@university.edu.vn', '0901234567', 'Khoa Công nghệ thông tin', 'Doctor');
 
 INSERT INTO Students (StudentID, AccountID, StudentCode, FullName, Gender, DateOfBirth, Email, Phone, ClassName, EnrollmentYear) VALUES
 (1, 3, 'SV001', 'Trần Thị Lan', 'Female', '2004-03-08', 'lan.tt@student.edu.vn', '0912345678', 'CNTT-K22', 2022),
-(2, 4, 'SV002', 'Lê Hoàng Nam', 'Male', '2004-11-21', 'nam.lh@student.edu.vn', '0987654321', 'CNTT-K22', 2022);
+(2, 4, 'SV002', 'Lê Hoàng Nam', 'Male', '2004-11-21', 'nam.lh@student.edu.vn', '0987654321', 'CNTT-K22', 2022),
+(3, 5, 'SV003', 'Nguyễn Minh Anh', 'Female', '2004-07-15', 'minhanh.nguyen@student.edu.vn', '0903456789', 'CNTT-K22A', 2022),
+(4, 6, 'SV004', 'Trần Quốc Bảo', 'Male', '2004-09-02', 'quocbao.tran@student.edu.vn', '0914567890', 'CNTT-K22A', 2022),
+(5, 7, 'SV005', 'Lê Hoàng Phúc', 'Male', '2005-01-20', 'hoangphuc.le@student.edu.vn', '0925678901', 'CNTT-K23B', 2023),
+(6, 8, 'SV006', 'Phạm Ngọc Linh', 'Female', '2005-06-11', 'ngoclinh.pham@student.edu.vn', '0936789012', 'CNTT-K23B', 2023),
+(7, 9, 'SV007', 'Võ Thị Mai', 'Female', '2006-02-28', 'thimai.vo@student.edu.vn', '0947890123', 'QTKD-K24A', 2024),
+(8, 10, 'SV008', 'Đặng Văn Hùng', 'Male', '2006-12-05', 'vanhung.dang@student.edu.vn', '0958901234', 'QTKD-K24A', 2024),
+(9, 11, 'SV009', 'Bùi Khánh Vy', 'Female', '2006-04-18', 'khanhvy.bui@student.edu.vn', '0969012345', 'KTPM-K24A', 2024),
+(10, 12, 'SV010', 'Hồ Đức Thịnh', 'Male', '2004-08-09', 'ducthinh.ho@student.edu.vn', '0970123456', 'HTTT-K23A', 2023);
 
 INSERT INTO Courses (CourseID, CourseCode, CourseName, Credits, LecturerID, Semester, AcademicYear) VALUES
 (1, 'INT2203', 'Cơ sở dữ liệu', 3, 1, 'HK1', '2025-2026'),

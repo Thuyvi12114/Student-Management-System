@@ -33,7 +33,7 @@ _COLUMNS = [
     ("course_code", "Mã học phần",  110, "w"),
     ("course_name", "Tên học phần", 240, "w"),
     ("credits",     "Tín chỉ",       60, "center"),
-    ("final",       "Điểm tổng kết", 110, "center"),
+    ("final",       "Điểm cuối kỳ", 110, "center"),
     ("status",      "Trạng thái",   120, "center"),
 ]
 
@@ -255,8 +255,8 @@ class StudentResultsView(tk.Frame):
             text=f"{s.full_name}  ·  {s.student_code}  ·  {s.class_name}"
         )
 
-        graded = [g for g in result.grades if g.average_score is not None]
-        pending = [g for g in result.grades if g.average_score is None]
+        graded = [g for g in result.grades if g.final_score is not None]
+        pending = [g for g in result.grades if g.final_score is None]
         total_courses = len(result.grades)
         graded_courses = len(graded)
 
@@ -280,17 +280,17 @@ class StudentResultsView(tk.Frame):
 
         # Table rows
         for grade in result.grades:
-            status_text = _status_display(grade.status)
+            status_text = "Đã có điểm" if grade.final_score is not None else "Chưa có điểm"
             self.tree.insert(
                 "", "end",
                 values=(
                     grade.course_code,
                     grade.course_name,
                     grade.credits,
-                    format_score(grade.average_score),
+                    format_score(grade.final_score),
                     status_text,
                 ),
-                tags=row_tag(grade.status),
+                tags=row_tag("PASSED" if grade.final_score is not None else None),
             )
 
         # Total credits
@@ -301,11 +301,11 @@ class StudentResultsView(tk.Frame):
         # GPA formula
         if graded:
             parts = " + ".join(
-                f"{format_score(g.average_score)} × {g.credits}" for g in graded
+                f"{format_score(g.final_score)} × {g.credits}" for g in graded
             )
-            formula_sym = "Σ(điểm tổng kết × số tín chỉ) / Σ(tín chỉ của học phần đủ điểm)"
+            formula_sym = "Σ(điểm cuối kỳ × số tín chỉ) / Σ(tín chỉ của học phần đã có điểm)"
             tc_graded = sum(g.credits for g in graded)
-            weighted = sum(g.average_score * g.credits for g in graded)
+            weighted = sum(g.final_score * g.credits for g in graded)
             gpa_calc = weighted / tc_graded if tc_graded else Decimal(0)
 
             self._formula_label.configure(text=formula_sym)
@@ -319,12 +319,3 @@ class StudentResultsView(tk.Frame):
             self._formula_label.configure(text="Chưa có học phần nào đủ điểm để tính trung bình.")
 
 
-def _status_display(status: str | None) -> str:
-    if not status:
-        return "Chưa có điểm"
-    mapping = {
-        "PASSED": "Đã có điểm",
-        "FAILED": "Không đạt",
-        "PENDING": "Chưa có điểm",
-    }
-    return mapping.get(status.upper(), status)

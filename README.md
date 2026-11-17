@@ -77,12 +77,17 @@ Hoặc dùng biến môi trường:
 
 ## Tài khoản mặc định
 
-| Tên đăng nhập | Vai trò        | Mật khẩu  |
-|---------------|---------------|-----------|
-| `admin`       | Quản trị viên | `Admin@123` |
-| `gv001`       | Giảng viên    | `Gv001@123` |
-| `sv001`       | Sinh viên     | `Sv001@123` |
-| `sv002`       | Sinh viên     | `Sv002@123` |
+| Tên đăng nhập | Vai trò | Mật khẩu | Ghi chú |
+|---|---|---|---|
+| `admin` | Quản trị viên | `Admin@123` | |
+| `gv001` | Giảng viên | `Lecturer@123` | Phụ trách 3 học phần |
+| `sv001` | Sinh viên | `Student@123` | Lớp CNTT-K22 |
+| `sv002` | Sinh viên | `Student@123` | Lớp CNTT-K22, tài khoản Inactive |
+| `sv003`, `sv004` | Sinh viên | `Student@123` | Lớp CNTT-K22A |
+| `sv005`, `sv006` | Sinh viên | `Student@123` | Lớp CNTT-K23B |
+| `sv007`, `sv008` | Sinh viên | `Student@123` | Lớp QTKD-K24A |
+| `sv009` | Sinh viên | `Student@123` | Lớp KTPM-K24A |
+| `sv010` | Sinh viên | `Student@123` | Lớp HTTT-K23A |
 
 ---
 

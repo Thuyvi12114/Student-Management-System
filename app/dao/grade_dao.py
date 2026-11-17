@@ -24,7 +24,7 @@ _SELECT_BY_STUDENT_COURSE = _SELECT_JOIN + " WHERE g.StudentID = %s AND g.Course
 _SELECT_BY_STUDENT = _SELECT_JOIN + " WHERE g.StudentID = %s ORDER BY c.Semester, c.CourseCode"
 
 _SELECT_ROSTER = """
-    SELECT s.StudentID, s.StudentCode, s.FullName,
+    SELECT s.StudentID, s.StudentCode, s.FullName, s.ClassName,
            g.GradeID, g.ProcessScore, g.FinalScore, g.Status
     FROM Students s
     LEFT JOIN Grades g ON g.StudentID = s.StudentID AND g.CourseID = %s
@@ -98,10 +98,11 @@ class GradeDAO:
                 student_id=int(row[0]),
                 student_code=str(row[1]),
                 student_name=str(row[2]),
-                grade_id=int(row[3]) if row[3] is not None else None,
-                process_score=self._decimal(row[4]),
-                final_score=self._decimal(row[5]),
-                status=str(row[6]) if row[6] is not None else None,
+                class_name=str(row[3]) if row[3] is not None else "",
+                grade_id=int(row[4]) if row[4] is not None else None,
+                process_score=self._decimal(row[5]),
+                final_score=self._decimal(row[6]),
+                status=str(row[7]) if row[7] is not None else None,
             )
             for row in rows
         ]
