@@ -1,25 +1,25 @@
-# UniCore — Hệ thống quản lý sinh viên (Nhóm 05)
+# UniCore — Student Management System (Group 05)
 
-Ứng dụng desktop **Python + Tkinter** kết nối **MySQL 8**, làm lại theo tài liệu
-`RequirementAndDesignDocument_Group05` (5 bảng, 19 use case, 3 vai trò).
+A **Python + Tkinter** desktop application backed by **MySQL 8**, rebuilt from the
+`RequirementAndDesignDocument_Group05` specification (5 tables, 19 use cases, 3 roles).
 
-Kiến trúc 3 lớp: `Config → Database → DAO → Service → UI (Tkinter)`.
+Three-layer architecture: `Config → Database → DAO → Service → UI (Tkinter)`.
 
 ```
 app/
-  config.py  db.py  context.py      # cấu hình, kết nối, khởi tạo các service
-  models.py                         # thực thể (UserAccounts, Students, Lecturers, Courses, Grades)
-  dao/                              # SQL tham số hóa (%s), giao dịch trong BaseDAO
-  service/                          # nghiệp vụ + phân quyền + kiểm tra dữ liệu
-  security/                         # băm mật khẩu PBKDF2, phiên đăng nhập, RBAC
-  ui/                               # màn hình Tkinter (accounts, profile, students, search, dashboard, lecturers, courses, grades)
-database/student_management.sql     # schema + dữ liệu mẫu
-tests/                              # pytest (cần MySQL đang chạy)
-docs/GIT_WORKFLOW.md                # hướng dẫn nhánh/commit cho nhóm
-scripts/                            # script commit theo từng người + OWNERSHIP.txt (file nào của ai)
+  config.py  db.py  context.py      # configuration, connection, service wiring
+  models.py                         # entities (UserAccounts, Students, Lecturers, Courses, Grades)
+  dao/                              # parameterized SQL (%s), transactions in BaseDAO
+  service/                          # business rules + authorization + validation
+  security/                         # PBKDF2 password hashing, login session, RBAC
+  ui/                               # Tkinter screens (accounts, profile, students, search, dashboard, lecturers, courses, grades)
+database/student_management.sql     # schema + seed data
+tests/                              # pytest (requires a running MySQL server)
+docs/GIT_WORKFLOW.md                # branch/commit guide for the team
+scripts/                            # per-member commit scripts + OWNERSHIP.txt (who owns which files)
 ```
 
-## 1. Cài đặt
+## 1. Install
 
 ```powershell
 python -m venv .venv
@@ -27,32 +27,32 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-> Nếu PowerShell chặn script: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
-> Nếu `pip.exe` bị chặn: luôn dùng `python -m pip`.
+> If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+> If `pip.exe` is blocked: always use `python -m pip`.
 
-## 2. Chạy MySQL
+## 2. Start MySQL
 
-**Docker (khuyến nghị)**
+**Docker (recommended)**
 
 ```powershell
-docker compose up -d          # lần đầu tự import database/student_management.sql
-docker compose ps             # đợi trạng thái "healthy"
+docker compose up -d          # first run imports database/student_management.sql automatically
+docker compose ps             # wait for "healthy"
 ```
 
-Nếu cổng 3306 đã bị chiếm (XAMPP/MySQL cài sẵn): đổi `"3306:3306"` trong `docker-compose.yml`
-thành `"3307:3306"` rồi đặt `port = 3307` trong `config.ini`.
+If port 3306 is already taken (XAMPP or a local MySQL install), change `"3306:3306"` in
+`docker-compose.yml` to `"3307:3306"` and set `port = 3307` in `config.ini`.
 
-Reset toàn bộ dữ liệu: `docker compose down -v` rồi `docker compose up -d`.
+To reset all data: `docker compose down -v` then `docker compose up -d`.
 
-**XAMPP / MySQL cài sẵn**: bật MySQL rồi nạp file SQL một lần
+**XAMPP / local MySQL**: start MySQL, then load the SQL file once
 
 ```powershell
 mysql -u root -p < database/student_management.sql
 ```
 
-## 3. Cấu hình kết nối
+## 3. Connection settings
 
-Sao chép `config.example.ini` thành `config.ini` (đã được `.gitignore`, không commit mật khẩu):
+Copy `config.example.ini` to `config.ini` (already covered by `.gitignore`, so passwords are never committed):
 
 ```ini
 [database]
@@ -63,43 +63,43 @@ user = root
 password =
 ```
 
-Hoặc dùng biến môi trường `SMS_DB_HOST`, `SMS_DB_PORT`, `SMS_DB_NAME`, `SMS_DB_USER`, `SMS_DB_PASSWORD`
-(biến môi trường ưu tiên hơn `config.ini`).
+Alternatively use the environment variables `SMS_DB_HOST`, `SMS_DB_PORT`, `SMS_DB_NAME`,
+`SMS_DB_USER`, `SMS_DB_PASSWORD` (environment variables take precedence over `config.ini`).
 
-## 4. Chạy ứng dụng
+## 4. Run the application
 
 ```powershell
 python main.py
 ```
 
-### Tài khoản mẫu
+### Sample accounts
 
-| Tên đăng nhập | Vai trò | Mật khẩu |
+| Username | Role | Password |
 |---|---|---|
-| `admin` | Quản trị viên | `Admin@123` |
-| `GV001`, `GV002`, `GV003` | Giảng viên | `Gv001@123`, `Gv002@123`, `Gv003@123` |
-| `SV001` … `SV010` | Sinh viên | `Sv001@123` … `Sv010@123` |
+| `admin` | Administrator | `Admin@123` |
+| `GV001`, `GV002`, `GV003` | Lecturer | `Gv001@123`, `Gv002@123`, `Gv003@123` |
+| `SV001` … `SV010` | Student | `Sv001@123` … `Sv010@123` |
 
-Tên đăng nhập không phân biệt hoa/thường. `SV005` là tài khoản **Inactive** để thử chặn đăng nhập.
-Với sinh viên/giảng viên, **tên đăng nhập luôn bằng mã SV/GV** (đúng tài liệu thiết kế).
+Usernames are case-insensitive. `SV005` is an **Inactive** account, useful for testing the login block.
+For students and lecturers the **username always equals the student/lecturer ID** (as required by the design document).
 
-## 5. Chạy kiểm thử
+## 5. Run the tests
 
 ```powershell
 python -m pip install pytest
-python -m pytest -q           # dùng CSDL riêng student_management_test, tự nạp lại SQL mỗi test
+python -m pytest -q           # uses a separate student_management_test database, reloads the SQL before each test
 ```
 
-Test cần lệnh `mysql` (client) trong PATH để nạp `database/student_management.sql`.
-Đổi CSDL test: `set SMS_DB_NAME=ten_khac` trước khi chạy.
+The tests need the `mysql` client on `PATH` so they can load `database/student_management.sql`.
+To use a different test database: `set SMS_DB_NAME=other_name` before running.
 
-## 6. Quy tắc nghiệp vụ chính (theo tài liệu thiết kế)
+## 6. Key business rules (from the design document)
 
-- Mã SV/GV/học phần là khóa chính dạng chữ (`VARCHAR(20)`); mã sinh viên **không đổi được** sau khi tạo.
-- Tạo/xóa sinh viên, giảng viên: hồ sơ + tài khoản trong **một giao dịch** (lỗi thì rollback cả hai).
-- Không xóa sinh viên đã có điểm, không xóa học phần đã có điểm, không xóa giảng viên còn phụ trách học phần
-  (khóa ngoại `RESTRICT` + kiểm tra ở service).
-- Sinh viên chỉ sửa **email, số điện thoại, địa chỉ**; hồ sơ giảng viên chỉ đọc.
-- Admin chỉ **xem** điểm; giảng viên chỉ nhập điểm cho học phần mình phụ trách; mỗi cặp (sinh viên, học phần) một điểm 0–10.
-- Điểm trung bình = Σ(điểm × tín chỉ) / Σ tín chỉ.
-- Mật khẩu: tối thiểu 8 ký tự, có hoa, thường, số, không khoảng trắng; lưu băm PBKDF2-HMAC-SHA256.
+- Student/lecturer/course IDs are textual primary keys (`VARCHAR(20)`); a student ID **cannot be changed** once created.
+- Creating or deleting a student/lecturer writes the profile and the account in **one transaction** (any failure rolls back both).
+- A student with grades cannot be deleted, nor a course with grades, nor a lecturer who still teaches a course
+  (`RESTRICT` foreign keys plus a service-level check).
+- Students may edit **email, phone and address** only; lecturer profiles are read-only.
+- Administrators may only **view** grades; lecturers may only enter grades for courses they teach; each (student, course) pair has one grade in the 0–10 range.
+- Grade point average = Σ(grade × credits) / Σ credits.
+- Passwords: at least 8 characters with upper case, lower case and a digit, no spaces; stored as a PBKDF2-HMAC-SHA256 hash.
