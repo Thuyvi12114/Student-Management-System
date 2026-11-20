@@ -1,22 +1,25 @@
-SOFTWARE TESTING | STUDENT MANAGEMENT SYSTEM – GROUP 05
+# Student Management System – Group 05 (Software Testing)
 
-1. Nội dung
-- tests/test_core_grades_vananh.py: đăng nhập, đổi mật khẩu, phân quyền điểm, GPA.
-- tests/test_modules_nghia.py: hồ sơ, tài khoản, CRUD sinh viên, tìm kiếm, rollback.
-- tests/test_search_courses_son.py: tìm kiếm, dashboard, giảng viên, học phần, SQL injection.
-- tests/test_stage4_auth_session.py: kiểm thử bổ sung đăng nhập, đăng xuất, đổi mật khẩu.
-- tests/test_stage4_validators.py: unit test hàm kiểm tra dữ liệu.
-- tests/test_stage4_database_constraints.py: PK, FK, UNIQUE, CHECK ở MySQL.
-- tests/conftest.py: tự nạp dữ liệu mẫu trước mỗi test; có khóa an toàn CSDL.
+## 1. Test Suite Overview
+- `tests/test_core_grades_vananh.py`: login, password change, grade authorization, and GPA calculation.
+- `tests/test_modules_nghia.py`: profile, accounts, student CRUD, search, and rollback behavior.
+- `tests/test_search_courses_son.py`: search, dashboard, lecturers, courses, and SQL injection checks.
+- `tests/test_auth_session.py`: additional login, logout, and password change tests.
+- `tests/test_validators.py`: unit tests for input and data validation functions.
+- `tests/test_database_constraints.py`: `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, and `CHECK` constraints in MySQL.
+- `tests/conftest.py`: automatic test fixture setup before each test with database safety guards.
 
-2. Điều kiện
-- Chạy trong thư mục gốc project đã merge Stage 3 (có app/, database/, main.py).
-- Python theo requirements.txt; MySQL 8/MariaDB đang chạy.
-- Cài: python -m pip install -r requirements.txt
-        python -m pip install pytest
-- MySQL command-line client `mysql` phải có trong PATH.
+## 2. Prerequisites
+- Run from the project root directory after merging Stage 3 (containing `app/`, `database/`, and `main.py`).
+- Python environment configured according to `requirements.txt` with MySQL 8 or MariaDB running.
+- Install dependencies:
+  python -m pip install -r requirements.txt
+  python -m pip install pytest
+- The MySQL command-line client (`mysql`) must be available in `PATH`.
 
-3. Chạy kiểm thử (PowerShell)
+## 3. Running Tests (PowerShell)
+Set environment variables targeting the test database before running `pytest`:
+
 $env:SMS_DB_HOST = "127.0.0.1"
 $env:SMS_DB_PORT = "3306"
 $env:SMS_DB_NAME = "student_management_test"
@@ -24,23 +27,22 @@ $env:SMS_DB_USER = "root"
 $env:SMS_DB_PASSWORD = ""
 python -m pytest tests -v
 
-Hoặc chạy riêng:
+Run individual test files:
+
 python -m pytest tests/test_core_grades_vananh.py -v
-python -m pytest tests/test_stage4_database_constraints.py -v
+python -m pytest tests/test_database_constraints.py -v
 
-4. CẢNH BÁO AN TOÀN
-Fixture sẽ DROP và tạo lại các bảng trong database đã cấu hình trước MỖI test.
-Chỉ được dùng CSDL kiểm thử có tên kết thúc bằng `_test` (mặc định student_management_test).
-Không đặt SMS_DB_NAME=student_management hoặc tên CSDL đang chứa dữ liệu thật.
+> **Safety Warning:** The test fixture drops and recreates tables in the configured database before **every** test. Always use a dedicated test database ending with `_test` (default: `student_management_test`). Never set `SMS_DB_NAME=student_management` or point to any database containing production/real data.
 
-5. Kết quả
-- PASSED: test chạy và đạt kết quả mong đợi.
-- FAILED: chương trình trả kết quả không đúng.
-- ERROR: lỗi môi trường/kết nối/cấu hình hoặc lỗi trước khi test chạy.
-- SKIPPED: test được bỏ qua.
-Ghi số liệu chạy thực tế vào sheet Test Summary trong file Excel; không tự điền Pass.
+## 4. Test Execution & Reporting
+- `PASSED`: test executed and met expected assertions.
+- `FAILED`: test executed and returned an unexpected result.
+- `ERROR`: environment, connection, configuration, or setup/teardown error before test execution.
+- `SKIPPED`: test skipped during execution.
 
-6. Kiểm thử hiệu năng và giao diện
-- Checklist 18 màn hình, kiểm thử tích hợp và kịch bản hiệu năng được lập trong Excel.
-- Hiệu năng cần tạo bộ dữ liệu 1.000 SV, 100 GV, 100 học phần, 5.000 điểm trên CSDL test;
-  đo tìm kiếm <2 giây và thao tác thông thường <3 giây. Không chạy trên CSDL thật.
+Record actual test results directly on each test case in the Excel file based on real test runs; do not manually fill in hardcoded pass results.
+
+## 5. UI, Integration, and Performance Testing
+- Test cases covering the 18 screens, integration flows, and performance scenarios are maintained in the Excel file.
+- Performance test dataset target on the test database: **1,000 students**, **100 lecturers**, **100 courses**, and **5,000 grade records**.
+- Target response thresholds: search operations under **2 seconds** and standard operations under **3 seconds**. Never run performance data generation or tests against a production database.
