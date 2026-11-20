@@ -1,4 +1,3 @@
-
 """Unit tests for student input validation."""
 from datetime import date
 import pytest
