@@ -1,100 +1,105 @@
-# UniCore — Hệ thống quản lý sinh viên
+# UniCore — Student Management System (Group 05)
 
-Ứng dụng desktop Python + Tkinter, kết nối MySQL.
+A **Python + Tkinter** desktop application backed by **MySQL 8**, rebuilt from the
+`RequirementAndDesignDocument_Group05` specification (5 tables, 19 use cases, 3 roles).
 
----
+Three-layer architecture: `Config → Database → DAO → Service → UI (Tkinter)`.
 
-## Yêu cầu
-
-- Python 3.10+
-- Docker Desktop **hoặc** XAMPP (để chạy MySQL)
-
----
-
-## Cách chạy
-
-### Dùng Docker (khuyến nghị — không cần cài XAMPP)
-
-```bash
-# 1. Khởi động MySQL trong container (lần đầu sẽ tự import database)
-docker compose up -d
-
-# 2. Chờ container sẵn sàng (~15 giây)
-docker compose ps        # cột Status phải là "healthy"
-
-# 3. Chạy ứng dụng
-.venv\Scripts\python.exe main.py   # Windows
-# hoặc
-python main.py                      # nếu đã kích hoạt venv
+```
+app/
+  config.py  db.py  context.py      # configuration, connection, service wiring
+  models.py                         # entities (UserAccounts, Students, Lecturers, Courses, Grades)
+  dao/                              # parameterized SQL (%s), transactions in BaseDAO
+  service/                          # business rules + authorization + validation
+  security/                         # PBKDF2 password hashing, login session, RBAC
+  ui/                               # Tkinter screens (accounts, profile, students, search, dashboard, lecturers, courses, grades)
+database/student_management.sql     # schema + seed data
+tests/                              # pytest (requires a running MySQL server)
+docs/GIT_WORKFLOW.md                # branch/commit guide for the team
+scripts/                            # per-member commit scripts + OWNERSHIP.txt (who owns which files)
 ```
 
-Dừng MySQL:
-```bash
-docker compose down
+## 1. Install
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
 ```
 
-Xóa cả dữ liệu (reset hoàn toàn):
-```bash
-docker compose down -v
+> If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+> If `pip.exe` is blocked: always use `python -m pip`.
+
+## 2. Start MySQL
+
+**Docker (recommended)**
+
+```powershell
+docker compose up -d          # first run imports database/student_management.sql automatically
+docker compose ps             # wait for "healthy"
 ```
 
----
+If port 3306 is already taken (XAMPP or a local MySQL install), change `"3306:3306"` in
+`docker-compose.yml` to `"3307:3306"` and set `port = 3307` in `config.ini`.
 
-### Dùng XAMPP
+To reset all data: `docker compose down -v` then `docker compose up -d`.
 
-1. Mở **XAMPP Control Panel** → Start **MySQL**
-2. Chạy ứng dụng:
-   ```bash
-   .venv\Scripts\python.exe main.py
-   ```
+**XAMPP / local MySQL**: start MySQL, then load the SQL file once
 
----
+```powershell
+mysql -u root -p < database/student_management.sql
+```
 
-## Cấu hình kết nối
+## 3. Connection settings
 
-File `config.ini` (không được commit lên Git):
+Copy `config.example.ini` to `config.ini` (already covered by `.gitignore`, so passwords are never committed):
 
 ```ini
 [database]
-host     = localhost
-port     = 3306
-name     = student_management
-user     = root
+host = 127.0.0.1
+port = 3306
+name = student_management
+user = root
 password =
 ```
 
-Hoặc dùng biến môi trường:
+Alternatively use the environment variables `SMS_DB_HOST`, `SMS_DB_PORT`, `SMS_DB_NAME`,
+`SMS_DB_USER`, `SMS_DB_PASSWORD` (environment variables take precedence over `config.ini`).
 
-| Biến             | Mặc định            |
-|------------------|---------------------|
-| `SMS_DB_HOST`    | localhost           |
-| `SMS_DB_PORT`    | 3306                |
-| `SMS_DB_NAME`    | student_management  |
-| `SMS_DB_USER`    | root                |
-| `SMS_DB_PASSWORD`| (trống)             |
+## 4. Run the application
 
----
-
-## Tài khoản mặc định
-
-| Tên đăng nhập | Vai trò        | Mật khẩu  |
-|---------------|---------------|-----------|
-| `admin`       | Quản trị viên | `Admin@123` |
-| `gv001`       | Giảng viên    | `Gv001@123` |
-| `sv001`       | Sinh viên     | `Sv001@123` |
-| `sv002`       | Sinh viên     | `Sv002@123` |
-
----
-
-## Cài đặt lần đầu
-
-```bash
-# Tạo virtual environment
-python -m venv .venv
-
-# Kích hoạt (Windows)
-.venv\Scripts\activate
-
-# Cài thư viện
-pip install -r requirements.txt
+```powershell
+python main.py
 ```
+
+### Sample accounts
+
+| Username | Role | Password |
+|---|---|---|
+| `admin` | Administrator | `Admin@123` |
+| `GV001`, `GV002`, `GV003` | Lecturer | `Gv001@123`, `Gv002@123`, `Gv003@123` |
+| `SV001` … `SV010` | Student | `Sv001@123` … `Sv010@123` |
+
+Usernames are case-insensitive. `SV005` is an **Inactive** account, useful for testing the login block.
+For students and lecturers the **username always equals the student/lecturer ID** (as required by the design document).
+
+## 5. Run the tests
+
+```powershell
+python -m pip install pytest
+python -m pytest -q           # uses a separate student_management_test database, reloads the SQL before each test
+```
+
+The tests need the `mysql` client on `PATH` so they can load `database/student_management.sql`.
+To use a different test database: `set SMS_DB_NAME=other_name` before running.
+
+## 6. Key business rules (from the design document)
+
+- Student/lecturer/course IDs are textual primary keys (`VARCHAR(20)`); a student ID **cannot be changed** once created.
+- Creating or deleting a student/lecturer writes the profile and the account in **one transaction** (any failure rolls back both).
+- A student with grades cannot be deleted, nor a course with grades, nor a lecturer who still teaches a course
+  (`RESTRICT` foreign keys plus a service-level check).
+- Students may edit **email, phone and address** only; lecturer profiles are read-only.
+- Administrators may only **view** grades; lecturers may only enter grades for courses they teach; each (student, course) pair has one grade in the 0–10 range.
+- Grade point average = Σ(grade × credits) / Σ credits.
+- Passwords: at least 8 characters with upper case, lower case and a digit, no spaces; stored as a PBKDF2-HMAC-SHA256 hash.

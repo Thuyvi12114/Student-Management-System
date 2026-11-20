@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Cấu hình kết nối MySQL cục bộ (không commit mật khẩu)
+config.ini
+
+# IDE
+.idea/
+.vscode/
+.settings/
+.DS_Store
+Thumbs.db
+
+# Dữ liệu kiểm thử cục bộ
+.mysql-test/
